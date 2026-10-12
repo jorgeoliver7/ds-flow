@@ -397,16 +397,45 @@
       sans: g("--ds-font-sans"), mono: g("--ds-font-mono"),
     };
     PLAY = document.documentElement.dataset.style === "claude";
+    bgDirty = true;
   }
   let PLAY = false; // estilo animado "claude"
 
-  let scale = 1;
+  // Resolución limitada: en móviles con pantallas 3× dibujar a resolución nativa
+  // multiplica por 4 el trabajo sin que se note la diferencia.
+  const COARSE = window.matchMedia("(pointer: coarse)").matches;
+  const DPR = () => Math.min(window.devicePixelRatio || 1, COARSE ? 1.25 : 2);
+  let scale = 1, bgDirty = true;
+  const bg = document.createElement("canvas"), bctx = bg.getContext("2d");
   function resize() {
-    const w = canvas.parentElement.clientWidth, dpr = window.devicePixelRatio || 1;
+    const w = canvas.parentElement.clientWidth, dpr = DPR();
     scale = w / L.width;
     canvas.style.height = L.height * scale + "px";
     canvas.width = Math.round(w * dpr); canvas.height = Math.round(L.height * scale * dpr);
     ctx.setTransform(dpr * scale, 0, 0, dpr * scale, 0, 0);
+    bgDirty = true;
+  }
+
+  // El suelo (color + rejilla de puntos o líneas) no cambia: se pinta una vez
+  function paintBackground() {
+    bg.width = canvas.width; bg.height = canvas.height;
+    bctx.setTransform(canvas.width / L.width, 0, 0, canvas.height / L.height, 0, 0);
+    bctx.fillStyle = C.floor; bctx.fillRect(0, 0, L.width, L.height);
+    if (PLAY) {
+      bctx.fillStyle = C.grid;
+      for (let x = 12; x < L.width; x += 24) for (let y = 12; y < L.height; y += 24) bctx.fillRect(x - 1, y - 1, 2, 2);
+    } else {
+      bctx.strokeStyle = C.grid; bctx.lineWidth = 1; bctx.beginPath();
+      for (let x = 0; x < L.width; x += 40) { bctx.moveTo(x + 0.5, 0); bctx.lineTo(x + 0.5, L.height); }
+      for (let y = 0; y < L.height; y += 40) { bctx.moveTo(0, y + 0.5); bctx.lineTo(L.width, y + 0.5); }
+      bctx.stroke();
+    }
+    bgDirty = false;
+  }
+
+  // Sombra barata: una copia desplazada en vez de shadowBlur, que en móvil es carísimo
+  function softShadow(x, y, w, h, r, off) {
+    ctx.fillStyle = C.shadow; rr(x, y + off, w, h, r); ctx.fill();
   }
 
   function rr(x, y, w, h, r) {
@@ -417,11 +446,8 @@
   // superficie de zona: en el estilo animado lleva sombra suave
   function card(x, y, w, h, r) {
     const rad = PLAY ? r + 6 : r;
-    ctx.save();
-    if (PLAY) { ctx.shadowColor = C.shadow; ctx.shadowBlur = 18; ctx.shadowOffsetY = 4; }
+    if (PLAY) softShadow(x, y, w, h, rad, 4);
     ctx.fillStyle = C.zone; rr(x, y, w, h, rad); ctx.fill();
-    ctx.restore();
-    rr(x, y, w, h, rad);
   }
   const isSel = (kind, id) => S.selected && S.selected.kind === kind && S.selected.id === id;
   function text(s, x, y, font, color, align) {
@@ -489,9 +515,8 @@
         if (moving) { ctx.fillStyle = C.floor; ctx.fillRect(wx + 1, wy + ((NOW * 40) % 12), 4, 2); ctx.fillStyle = C.wheel; }
       }
       if (moving && Math.random() < 0.3) burst(x + w / 2 + (Math.random() - 0.5) * 20, y - 10, C.line, 1, 0.5);
-      ctx.save(); ctx.shadowColor = C.shadow; ctx.shadowBlur = 10; ctx.shadowOffsetY = 3;
-      ctx.fillStyle = C.truck; rr(x, y, w, h, 10); ctx.fill(); ctx.restore();
-      rr(x, y, w, h, 10);
+      softShadow(x, y, w, h, 10, 3);
+      ctx.fillStyle = C.truck; rr(x, y, w, h, 10); ctx.fill();
     } else { ctx.fillStyle = C.truck; rr(x, y, w, h, 5); ctx.fill(); }
     if (isSel("truck", t.id)) { ctx.strokeStyle = C.sel; ctx.lineWidth = 2; ctx.stroke(); }
     ctx.fillStyle = C.line; rr(x + 10, y - 8, w - 20, 12, 3); ctx.fill(); // cabina
@@ -648,8 +673,8 @@
           if (v.state !== "loading") { ctx.fillStyle = C.floor; ctx.fillRect(wx + 1, wy + ((NOW * 40) % 9), 4, 2); ctx.fillStyle = C.wheel; }
         }
         if (v.state === "leaving" && Math.random() < 0.5) burst(x + w / 2, y + h + 4, C.line, 1, 0.6);
-        ctx.save(); ctx.shadowColor = C.shadow; ctx.shadowBlur = 10; ctx.shadowOffsetY = 3;
-        ctx.fillStyle = C.van; rr(x, y, w, h, 12); ctx.fill(); ctx.restore();
+        softShadow(x, y, w, h, 12, 3);
+        ctx.fillStyle = C.van; rr(x, y, w, h, 12); ctx.fill();
         ctx.fillStyle = C.line; rr(x + 8, y - 3, w - 16, 6, 3); ctx.fill(); // parabrisas
       } else { ctx.fillStyle = C.van; rr(x, y, w, h, 6); ctx.fill(); }
       ctx.fillStyle = C.aisle[r.aisle]; ctx.fillRect(x + 4, y, w - 8, 3);
@@ -726,15 +751,8 @@
   let NOW = 0;
   function draw(time) {
     NOW = time;
-    ctx.fillStyle = C.floor; ctx.fillRect(0, 0, L.width, L.height);
-    if (PLAY) {
-      ctx.fillStyle = C.grid;
-      for (let x = 12; x < L.width; x += 24) for (let y = 12; y < L.height; y += 24) ctx.fillRect(x - 1, y - 1, 2, 2);
-    } else {
-      ctx.strokeStyle = C.grid; ctx.lineWidth = 1;
-      for (let x = 0; x < L.width; x += 40) { ctx.beginPath(); ctx.moveTo(x + 0.5, 0); ctx.lineTo(x + 0.5, L.height); ctx.stroke(); }
-      for (let y = 0; y < L.height; y += 40) { ctx.beginPath(); ctx.moveTo(0, y + 0.5); ctx.lineTo(L.width, y + 0.5); ctx.stroke(); }
-    }
+    if (bgDirty) paintBackground();
+    ctx.drawImage(bg, 0, 0, L.width, L.height);
     drawDocks(); drawBelts(time);
     drawStaging();
     drawQueueZone(I, "induct", S.inductQ, I);
@@ -957,13 +975,18 @@
   applyTheme(saved === "light" ? "light" : "dark");
 
   // ── Bucle ─────────────────────────────────────────────
-  let last = performance.now(), uiAcc = 0;
+  let last = performance.now(), uiAcc = 0, mapVisible = true;
+  // si el mapa no está en pantalla (p. ej. leyendo el panel en el móvil), la simulación sigue pero no se dibuja
+  if ("IntersectionObserver" in window) new IntersectionObserver((es) => { mapVisible = es[0].isIntersecting; }).observe(canvas);
+  // en táctil dibujamos a ~30 fps: el movimiento sigue fluido y el móvil trabaja la mitad
+  const MIN_FRAME = COARSE ? 1000 / 31 : 0;
   function frame(now) {
+    if (now - last < MIN_FRAME) { requestAnimationFrame(frame); return; }
     const dt = Math.min((now - last) / 1000, 0.1); last = now;
     if (!S.paused) { let rem = dt * S.speed; while (rem > 0) { const d = Math.min(rem, 0.05); step(d); rem -= d; } }
-    draw(now / 1000);
+    if (mapVisible) draw(now / 1000);
     uiAcc += dt;
-    if (uiAcc > 0.25) { uiAcc = 0; renderKpis(); drawSpark(); if (S.selected) renderDetail(); }
+    if (uiAcc > (COARSE ? 0.5 : 0.25)) { uiAcc = 0; renderKpis(); drawSpark(); if (S.selected) renderDetail(); }
     requestAnimationFrame(frame);
   }
 
