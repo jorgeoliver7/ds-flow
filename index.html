@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DS Flow · Mapa interactivo de una estación de reparto</title>
+  <meta name="description" content="Simulación interactiva de una estación de reparto de última milla: camiones en 9 muelles, recepción, inducción, conveyor, stow a sacas, pick por rutas y furgonetas en el yard. Con rastreo de paquetes y KPIs del ciclo. Por Jorge Acedo.">
+  <meta name="author" content="Jorge Acedo">
+  <link rel="icon" type="image/svg+xml" href="../favicon.svg">
+  <link rel="canonical" href="https://jorgeoliver7.github.io/Portfolio-Website/ds-flow/">
+  <meta property="og:title" content="DS Flow · Mapa interactivo de una estación de reparto">
+  <meta property="og:description" content="Mete camiones, llama furgonetas y rastrea cualquier paquete desde el muelle hasta la entrega.">
+  <meta property="og:url" content="https://jorgeoliver7.github.io/Portfolio-Website/ds-flow/">
+  <meta property="og:type" content="website">
+  <script>
+    (function () {
+      var t = "dark"; try { t = localStorage.getItem("a-theme") || "dark"; } catch (e) {}
+      document.documentElement.dataset.theme = t === "light" ? "light" : "dark";
+      var st = "claude"; try { st = localStorage.getItem("ds-style") || "claude"; } catch (e) {}
+      document.documentElement.dataset.style = st === "editorial" ? "editorial" : "claude";
+    })();
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500;600&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=DM+Mono:wght@400;500&family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;1,9..144,400&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="ds-flow.css">
+</head>
+<body>
+  <header class="ds-top">
+    <a class="ds-back" href="../">← Portfolio</a>
+    <div class="ds-title">
+      <h1>DS Flow <em>· el viaje de un paquete</em></h1>
+      <p>Una estación de reparto de última milla, simulada. Mete camiones, llama furgonetas y rastrea cualquier paquete.</p>
+    </div>
+    <div class="ds-actions">
+      <div class="ds-style" role="group" aria-label="Estilo visual">
+        <button type="button" data-style-pick="claude" aria-pressed="true">Claude</button>
+        <button type="button" data-style-pick="editorial" aria-pressed="false">Editorial</button>
+      </div>
+      <button class="ds-icon" id="ds-theme" aria-label="Cambiar tema">☀</button>
+    </div>
+  </header>
+
+  <main class="ds-main">
+    <section class="ds-stage" aria-label="Mapa de la estación">
+      <div class="ds-controls">
+        <button class="ds-btn ds-btn--in" id="ds-add-truck">+ Camión</button>
+        <button class="ds-btn ds-btn--out" id="ds-add-van">+ Furgoneta</button>
+        <button class="ds-btn" id="ds-pause" aria-pressed="false">❚❚ Pausa</button>
+        <label class="ds-field">Velocidad
+          <select id="ds-speed">
+            <option value="1">1× · tiempo real</option>
+            <option value="10" selected>10×</option>
+            <option value="30">30×</option>
+            <option value="60">60×</option>
+            <option value="180">180×</option>
+          </select>
+        </label>
+        <label class="ds-field ds-check"><input type="checkbox" id="ds-auto" checked> Piloto automático</label>
+      </div>
+
+      <div class="ds-map-wrap">
+        <div class="ds-map-inner"><canvas id="ds-map" role="img" aria-label="Plano animado de la estación: muelles arriba, zona de carros e inducción, conveyor a la izquierda, tres pasillos de sacas en el centro, zona de pick y yard de furgonetas a la derecha"></canvas></div>
+        <div class="ds-toast" id="ds-toast" role="status" aria-live="polite"></div>
+      </div>
+
+      <div class="ds-legend">
+        <span><i class="ds-dot ds-dot--raw"></i>Sin clasificar</span>
+        <span><i class="ds-dot ds-dot--a"></i>Pasillo A</span>
+        <span><i class="ds-dot ds-dot--b"></i>Pasillo B</span>
+        <span><i class="ds-dot ds-dot--c"></i>Pasillo C</span>
+        <span><i class="ds-bar ds-bar--ok"></i>Fluido</span>
+        <span><i class="ds-bar ds-bar--warn"></i>&gt; 6 min de cola</span>
+        <span><i class="ds-bar ds-bar--bad"></i>&gt; 15 min</span>
+      </div>
+
+      <nav class="ds-zones" aria-label="Zonas de la estación">
+        <button data-zone="receive">1 · Zona de carros</button>
+        <button data-zone="induct">2 · Inducción</button>
+        <button data-zone="conveyor">3 · Conveyor</button>
+        <button data-zone="aisleA">4 · Stow a sacas</button>
+        <button data-zone="pick">5 · Pick por rutas</button>
+        <button data-zone="yard">6 · Yard</button>
+      </nav>
+    </section>
+
+    <aside class="ds-panel" aria-label="Centro de control">
+      <div class="ds-panel-head">
+        <span class="ds-live" aria-hidden="true"></span>
+        <h2>Centro de control</h2>
+      </div>
+
+      <form class="ds-track" id="ds-track-form" role="search">
+        <input id="ds-search" type="text" placeholder="Rastrear paquete · DS00000000" autocomplete="off" spellcheck="false" aria-label="Código de paquete">
+        <button class="ds-btn" type="submit">Buscar</button>
+        <button class="ds-btn ds-btn--ghost" type="button" id="ds-random">Al azar</button>
+      </form>
+
+      <div class="ds-card ds-detail" id="ds-detail" aria-live="polite"></div>
+
+      <div class="ds-kpis" id="ds-kpis"></div>
+
+      <div class="ds-card">
+        <h4>Alertas</h4>
+        <ul class="ds-alerts" id="ds-alerts"></ul>
+      </div>
+
+      <div class="ds-card">
+        <h4>Tendencia <small><i class="ds-dot ds-dot--raw"></i>en planta <i class="ds-dot ds-dot--a"></i>stow/h</small></h4>
+        <canvas id="ds-spark" class="ds-spark" aria-hidden="true"></canvas>
+      </div>
+
+      <div class="ds-card">
+        <h4>Actividad</h4>
+        <ul class="ds-log" id="ds-log"></ul>
+      </div>
+    </aside>
+  </main>
+
+  <footer class="ds-foot">
+    Proyecto de <a href="../">Jorge Acedo</a>. Estación genérica inspirada en mi experiencia en logística de última milla; ritmos, rutas y paquetes son sintéticos.
+    <a href="https://github.com/jorgeoliver7/Portfolio-Website/tree/main/ds-flow">Código</a>
+  </footer>
+
+  <script src="layout.js"></script>
+  <script src="sim.js"></script>
+</body>
+</html>
