@@ -37,6 +37,12 @@
 
   <main class="ds-main">
     <section class="ds-stage" aria-label="Mapa de la estación">
+      <div class="ds-controls ds-scenario-bar">
+        <label class="ds-field">Escenario <select id="ds-scenario"></select></label>
+        <p class="ds-scenario-desc" id="ds-scenario-desc"></p>
+        <button class="ds-btn" id="ds-report-btn">Informe del turno</button>
+      </div>
+
       <div class="ds-controls">
         <button class="ds-btn ds-btn--in" id="ds-add-truck">+ Camión</button>
         <button class="ds-btn ds-btn--out" id="ds-add-van">+ Furgoneta</button>
@@ -145,8 +151,19 @@
     <a href="https://github.com/jorgeoliver7/ds-flow">Código</a>
   </footer>
 
+  <dialog class="ds-report" id="ds-report" aria-label="Informe de fin de turno">
+    <div id="ds-report-body"></div>
+    <div class="ds-report-actions">
+      <button class="ds-btn ds-btn--out" id="ds-report-csv">Descargar CSV</button>
+      <button class="ds-btn" id="ds-report-print">Imprimir o guardar PDF</button>
+      <button class="ds-btn ds-btn--ghost" id="ds-report-close">Cerrar</button>
+    </div>
+  </dialog>
+
   <script src="layout.js"></script>
   <script src="engine.js"></script>
+  <script src="scenarios.js"></script>
+  <script src="report.js"></script>
   <script src="charts.js"></script>
   <script src="render.js"></script>
   <script src="ui.js"></script>

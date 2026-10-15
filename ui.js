@@ -15,13 +15,18 @@
   const clock = (t) => DSEngine.clock(L, t);
   const C = new Proxy({}, { get: (_, k) => V.C[k] });
 
-  function boot(opts) {
+  // Escenario: se puede compartir con ?escenario=pico
+  const SCN = DSScenarios.list;
+  let scenarioId = new URLSearchParams(location.search).get("escenario");
+  if (!SCN.some((s) => s.id === scenarioId)) scenarioId = SCN[0].id;
+  const scenario = () => SCN.find((s) => s.id === scenarioId);
+
+  function boot() {
     ready = false;
     const prev = S;
-    E = DSEngine.create(L, Object.assign({
-      seed: 7,
+    E = DSEngine.create(L, Object.assign(DSScenarios.options(L, scenarioId), {
       hooks: { log: () => ready && renderLog(), fx: (k, d) => V && V.onFx(k, d), now: () => performance.now() / 1000 },
-    }, opts));
+    }));
     S = E.S;
     S.speed = prev ? prev.speed : Number($("#ds-speed").value) / 60;
     S.paused = false; S.selected = null; S.tracked = null; draft = null;
@@ -29,9 +34,45 @@
     V = DSRender.create(E, canvas);
     V.resize(); V.readColors();
     pauseBtn.textContent = "❚❚ Pausa"; pauseBtn.setAttribute("aria-pressed", "false");
+    reportShown = false;
+    $("#ds-scenario-desc").textContent = scenario().desc;
     ready = true;
     renderDetail(); renderLog(); renderKpis();
   }
+
+  // ── Informe de fin de turno ───────────────────────────
+  const reportEl = $("#ds-report");
+  let reportShown = false, report = null;
+  function openReport() {
+    report = DSReport.build(E, scenario());
+    $("#ds-report-body").innerHTML = DSReport.html(report);
+    if (!reportEl.open) reportEl.showModal();
+  }
+  $("#ds-report-btn").addEventListener("click", openReport);
+  $("#ds-report-close").addEventListener("click", () => reportEl.close());
+  $("#ds-report-csv").addEventListener("click", () => {
+    const url = URL.createObjectURL(new Blob([DSReport.csv(report)], { type: "text/csv;charset=utf-8" }));
+    const a = document.createElement("a");
+    a.href = url; a.download = `ds-flow-informe-${scenarioId}.csv`;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  });
+  $("#ds-report-print").addEventListener("click", () => window.print());
+  // se imprime siempre en claro, aunque la página esté en oscuro
+  let themeBeforePrint = null;
+  window.addEventListener("beforeprint", () => { themeBeforePrint = document.documentElement.dataset.theme; document.documentElement.dataset.theme = "light"; });
+  window.addEventListener("afterprint", () => { if (themeBeforePrint) document.documentElement.dataset.theme = themeBeforePrint; });
+
+  const scSel = $("#ds-scenario");
+  scSel.innerHTML = SCN.map((s) => `<option value="${s.id}">${s.name}</option>`).join("");
+  scSel.value = scenarioId;
+  scSel.addEventListener("change", () => {
+    scenarioId = scSel.value;
+    const url = new URL(location.href);
+    if (scenarioId === SCN[0].id) url.searchParams.delete("escenario"); else url.searchParams.set("escenario", scenarioId);
+    history.replaceState(null, "", url);
+    boot();
+  });
 
   canvas.addEventListener("click", (e) => {
     const h = V.hit(...V.local(e));
@@ -306,7 +347,7 @@
     // ventana de sort: del primer camión al corte
     ctx.fillStyle = C.raw; ctx.globalAlpha = 0.35; ctx.fillRect(X(S.plan.firstTruck), by, X(S.plan.cutoff) - X(S.plan.firstTruck), 6); ctx.globalAlpha = 1;
     // oleadas: pick (claro) y ventana de salida (sólido)
-    const SH = L.shift;
+    const SH = E.SH;
     for (const wv of S.plan.waves) {
       const col = C.aisle[S.routes[wv.routes[0] - 1].aisle];
       ctx.fillStyle = col; ctx.globalAlpha = 0.3; ctx.fillRect(X(wv.at - SH.pickLead), by, X(wv.at) - X(wv.at - SH.pickLead), 6);
@@ -408,7 +449,11 @@
     if (!S.paused) { let rem = dt * S.speed; while (rem > 0) { const d = Math.min(rem, 0.05); E.step(d); rem -= d; } }
     if (mapVisible) V.draw(now / 1000);
     uiAcc += dt;
-    if (uiAcc > (V.COARSE ? 0.5 : 0.25)) { uiAcc = 0; renderKpis(); drawShift(); drawPlan(); drawHourly(); if (S.selected) renderDetail(); }
+    if (uiAcc > (V.COARSE ? 0.5 : 0.25)) {
+      uiAcc = 0; renderKpis(); drawShift(); drawPlan(); drawHourly(); if (S.selected) renderDetail();
+      // al terminar el turno se abre el informe una vez
+      if (S.over && !reportShown) { reportShown = true; openReport(); }
+    }
     requestAnimationFrame(frame);
   }
   window.addEventListener("resize", () => V.resize());

@@ -342,6 +342,33 @@ button, select, input { font: inherit; color: inherit; }
 }
 .ds-foot a { color: var(--ds-fg-soft); }
 
+/* ── Escenario e informe ──────────────────────────── */
+.ds-scenario-bar { padding-bottom: 10px; border-bottom: 1px solid var(--ds-line); }
+.ds-scenario-desc { flex: 1 1 260px; margin: 0; font-size: 12px; color: var(--ds-fg-soft); }
+.ds-report {
+  width: min(980px, calc(100vw - 32px)); max-height: calc(100vh - 48px);
+  margin: auto; padding: 24px 26px 20px; border-radius: 16px;
+  border: 1px solid var(--ds-line); background: var(--ds-bg); color: var(--ds-fg);
+}
+.ds-report::backdrop { background: rgb(0 0 0 / 0.55); }
+.ds-report h2 { font-family: var(--ds-font-display); font-size: 26px; font-weight: 600; margin: 2px 0 14px; }
+.ds-eyebrow { margin: 0; font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--ds-fg-muted); }
+.ds-report h4 { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--ds-fg-muted); margin: 0 0 8px; }
+.ds-report-kpis { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+.ds-report-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-top: 18px; }
+.ds-report-list { display: grid; gap: 6px; font-size: 13px; line-height: 1.4; }
+.ds-report-list li { padding: 7px 10px; border-radius: 8px; border-left: 3px solid; background: var(--ds-bg-2); }
+.ds-report-good li { border-color: var(--ds-ok); }
+.ds-report-bad li { border-color: var(--ds-bad); }
+.ds-report-list li.ds-hint { border-color: var(--ds-line); color: var(--ds-fg-muted); }
+.ds-report-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; margin-top: 20px; }
+@media (max-width: 720px) { .ds-report-cols { grid-template-columns: 1fr; } .ds-report { padding: 18px 16px; } }
+@media print {
+  body > :not(.ds-report) { display: none !important; }
+  .ds-report { position: static; width: auto; max-height: none; border: 0; padding: 0; }
+  .ds-report-actions { display: none; }
+}
+
 /* ── Responsive ───────────────────────────────────── */
 @media (max-width: 1100px) {
   .ds-main { grid-template-columns: 1fr; }

@@ -76,14 +76,14 @@
   const avg = (a) => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : 0);
   const trim = (a, n) => { if (a.length > n) a.splice(0, a.length - n); };
 
-  // opts: { seed, hooks: { log(msg, kind), fx(kind, data), now() } }
+  // opts: { seed, shift (sustituye a L.shift), staff (plantilla inicial), hooks: { log(msg, kind), fx(kind, data), now() } }
   function create(L, opts) {
     opts = opts || {};
     const hooks = Object.assign({ log() {}, fx() {}, now: () => 0 }, opts.hooks);
     const rand = rng(opts.seed == null ? 7 : opts.seed);
     const D = L.docks, R = L.receive, I = L.induct, CV = L.conveyor, ST = L.stow, P = L.pick, Y = L.yard, PS = L.problem, Q = L.quality;
     const geo = geometry(L);
-    const SH = L.shift, at = (hhmm) => toShift(hhmm, L.shiftStart);
+    const SH = opts.shift || L.shift, at = (hhmm) => toShift(hhmm, L.shiftStart);
 
     // ── Estado ────────────────────────────────────────────
     const S = {
@@ -92,7 +92,8 @@
       trucks: [], vans: [], transit: [],
       inductQ: [], moves: [], nextCart: 1,
       acc: { induct: 0, pick: 0 },
-      staff: { receive: R.staff, induct: I.staff, stow: ST.staff, pick: P.staff, ps: PS.staff },
+      staff: { receive: R.staff, induct: I.staff, stow: ST.staff, pick: P.staff, ps: PS.staff, ...opts.staff },
+      totals: {}, procMin: {},  // paquetes y minutos-persona de cada proceso en todo el turno
       aisles: ST.aisles.map((a, i) => ({ ...a, idx: i, queue: [], acc: 0, done: 0 })),
       routes: [],
       received: 0, stowed: 0, sorted: 0, dispatched: 0, delivered: 0, routesOut: 0, routesLate: 0,
@@ -173,6 +174,7 @@
       f[m] = (f[m] || 0) + (n || 1);
       const h = Math.floor(S.t / 60), H = S.hourly[h] || (S.hourly[h] = { stow: 0, induct: 0, pick: 0, load: 0, receive: 0 });
       H[key] = (H[key] || 0) + (n || 1);
+      S.totals[key] = (S.totals[key] || 0) + (n || 1);
     }
     // Paquetes por hora de un proceso en la última hora (o lo que va de turno)
     function hourRate(key) {
@@ -368,6 +370,10 @@
 
     const VEH = 1; // minutos simulados que tarda un vehículo en atracar o salir
 
+    // Suma capacidad de un paso. El tope evita que un proceso parado acumule trabajo para luego,
+    // pero deja pasar todo lo que da de sí en el paso aunque sea más de 3 paquetes
+    const cap = (acc, add) => Math.min(acc + add, Math.max(3, add + 1));
+
     // ── Paso de simulación (dt en minutos simulados) ──────
     function step(dt) {
       S.t += dt;
@@ -422,7 +428,7 @@
       S.moves = S.moves.filter((m) => m.p < 1);
 
       // Inducción → conveyor → pasillo
-      S.acc.induct = Math.min(S.acc.induct + (rate(I.rate, "induct", I) / 60) * dt, 3);
+      S.acc.induct = cap(S.acc.induct, (rate(I.rate, "induct", I) / 60) * dt);
       if (S.conveyorDown) S.acc.induct = 0;
       while (S.acc.induct >= 1 && S.inductQ.length) {
         S.acc.induct--;
@@ -437,7 +443,7 @@
       // Stow: cada pasillo con su parte de la plantilla
       const perAisle = rate(ST.rate, "stow", ST) / S.aisles.length;
       for (const a of S.aisles) {
-        a.acc = Math.min(a.acc + (perAisle / 60) * dt, 3);
+        a.acc = cap(a.acc, (perAisle / 60) * dt);
         while (a.acc >= 1 && a.queue.length) {
           a.acc--; a.done++; count("stow");
           const p = a.queue.shift(), r = S.routes[p.route - 1];
@@ -467,7 +473,7 @@
       }
 
       // Pick: primero las rutas de la oleada más temprana (y las llamadas a mano)
-      S.acc.pick = Math.min(S.acc.pick + (rate(P.rate, "pick", P) / 60) * dt, 3);
+      S.acc.pick = cap(S.acc.pick, (rate(P.rate, "pick", P) / 60) * dt);
       if (S.acc.pick >= 1) {
         const queue = S.routes.filter((r) => toPick(r) > 0).sort((a, b) => (a.deadline ?? a.wave?.deadline ?? 1e9) - (b.deadline ?? b.wave?.deadline ?? 1e9) || a.n - b.n);
         // el equipo se reparte entre las dos primeras rutas de la cola
@@ -490,7 +496,7 @@
         const r = S.routes[v.route - 1];
         if (v.state === "arriving") { v.p += dt / VEH; if (v.p >= 1) { v.state = "loading"; v.p = 1; } }
         else if (v.state === "loading") {
-          v.acc = Math.min(v.acc + (Y.loadRate / 60) * dt, 3);
+          v.acc = cap(v.acc, (Y.loadRate / 60) * dt);
           while (v.acc >= 1 && r.cart.length) {
             v.acc--; v.incoming++;
             const p = r.cart.shift(), c = geo.cartCenter(r), pc = geo.padCenter(v.pad);
@@ -510,7 +516,7 @@
       }
 
       // Problem solve
-      S.psAcc = Math.min(S.psAcc + (rate(PS.uph * PS.staff, "ps", PS) / 60) * dt, 2);
+      S.psAcc = cap(S.psAcc, (rate(PS.uph * PS.staff, "ps", PS) / 60) * dt);
       // cada incidencia lleva unos minutos de revisión (reetiquetar, reembalar, buscar su ruta)
       while (S.psAcc >= 1 && S.psQ.length && S.t - S.psQ[0].psAt >= PS.handleMin) { S.psAcc--; resolvePS(S.psQ.shift()); }
       if (!S.psQ.length) S.psAcc = Math.min(S.psAcc, 1);
@@ -536,7 +542,8 @@
       // Horas trabajadas y deriva de la productividad (cada 10 min)
       // el equipo de sort trabaja de noche (hasta acabar el sort) y el de pick desde la primera oleada
       const sortCrew = S.t >= S.plan.firstTruck - 15 && S.sortDoneAt == null, pickCrew = S.t >= S.plan.pickStart && !S.over;
-      S.laborMin += ((sortCrew ? S.staff.receive + S.staff.induct + S.staff.stow : 0) + (pickCrew ? S.staff.pick : 0) + (sortCrew || pickCrew ? S.staff.ps : 0)) * dt;
+      const crew = { receive: sortCrew, induct: sortCrew, stow: sortCrew, pick: pickCrew, ps: sortCrew || pickCrew };
+      for (const k in crew) if (crew[k]) { S.procMin[k] = (S.procMin[k] || 0) + S.staff[k] * dt; S.laborMin += S.staff[k] * dt; }
       if (Math.floor(S.t / 10) !== Math.floor((S.t - dt) / 10)) {
         for (const k in S.eff) S.eff[k] = Math.min(1.08, Math.max(0.82, S.eff[k] + (rand() - 0.5) * 0.08));
       }
@@ -608,7 +615,7 @@
         }
         const vols = routes.map((r) => r.bag.length + r.cart.length + r.upstream + (future * r.weight) / tw);
         const pending = routes.some((r) => r.upstream) || future > 0;
-        const start = Math.max(cursor, w.at - L.shift.pickLead);
+        const start = Math.max(cursor, w.at - SH.pickLead);
         // lo que falta por recoger: lo que está en sacas, lo que aún no ha llegado y su parte de los camiones pendientes
         const toPickVol = routes.reduce((s, r) => s + r.bag.length + r.upstream + (future * r.weight) / tw, 0);
         let pickDone = start + toPickVol / pickCap;
@@ -674,7 +681,7 @@
     }
 
     return {
-      S, L, geo, posOf, step, addTruck, callVan, freePad, laneOf, stagingCount, rate, loads, stowRate, inPlantCount,
+      S, L, SH, geo, posOf, step, addTruck, callVan, freePad, laneOf, stagingCount, rate, loads, stowRate, inPlantCount,
       toPick, forecast, metrics, planAt, sortCap, at, waveForecast, hourRate, log,
       clock: (t) => clock(L, t),
     };

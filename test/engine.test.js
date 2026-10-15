@@ -120,3 +120,28 @@ test("un camión que llega tarde retrasa el sort y se avisa", () => {
   assert.ok(late.S.sortDoneAt > base.S.sortDoneAt + 10, `${late.S.sortDoneAt} vs ${base.S.sortDoneAt}`);
   assert.ok(logs.some((m) => m.includes("T-08 viene con 60 min de retraso")));
 });
+
+test("cada escenario lleva a un informe distinto y coherente", () => {
+  const SC = require("../scenarios.js"), R = require("../report.js");
+  const out = {};
+  for (const sc of SC.list) {
+    const E = DSEngine.create(L, SC.options(L, sc.id));
+    run(E, 760);
+    assert.ok(E.S.over, sc.id + " termina");
+    const r = R.build(E, sc);
+    assert.equal(E.S.received, E.S.plan.volume, sc.id);
+    out[sc.id] = { r, S: E.S };
+    const csv = R.csv(r);
+    assert.ok(csv.startsWith("﻿Sección;Métrica;Valor;Detalle"));
+    assert.ok(csv.includes(sc.name));
+  }
+  // noche normal: todo a tiempo; pico: más volumen y peor; falta de personal: sort tarde; retraso: avisa del camión
+  assert.ok(out.normal.r.good.some((g) => g.includes("antes del corte")));
+  assert.equal(out.normal.S.routesLate, 0);
+  assert.ok(out.pico.S.plan.volume > out.normal.S.plan.volume * 1.3);
+  assert.ok(out.personal.S.sortDoneAt > out.personal.S.plan.cutoff);
+  assert.ok(out.personal.r.bad.some((b) => b.includes("después del corte")));
+  assert.ok(out.retraso.r.bad.some((b) => b.includes("T-10 llegó 90 min tarde")));
+  const signature = (x) => JSON.stringify([x.r.kpis, x.r.bad]);
+  assert.equal(new Set(Object.values(out).map(signature)).size, SC.list.length);
+});
