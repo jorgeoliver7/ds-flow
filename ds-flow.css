@@ -1,73 +1,6 @@
-/* DS Flow — mismo lenguaje visual que el portfolio (Editorial Data) */
+/* DS Flow — estilo cálido, redondeado y animado */
 
 :root {
-  --ds-bg: #0e1116;
-  --ds-bg-2: #151a21;
-  --ds-fg: #f3efe6;
-  --ds-fg-soft: rgba(243, 239, 230, 0.68);
-  --ds-fg-muted: rgba(243, 239, 230, 0.42);
-  --ds-line: rgba(243, 239, 230, 0.16);
-  --ds-accent: #00d9a3;
-
-  --ds-floor: #11151b;
-  --ds-grid: rgba(243, 239, 230, 0.05);
-  --ds-zone: #18202a;
-  --ds-belt: #232c38;
-  --ds-truck: #26303d;
-  --ds-van: #26303d;
-
-  --ds-raw: #c9c2b4;
-  --ds-a: #00d9a3;
-  --ds-b: #5b9dff;
-  --ds-c: #f5b544;
-  --ds-d: #ef6fa6;
-
-  --ds-ok: #00d9a3;
-  --ds-warn: #f5b544;
-  --ds-bad: #ff5d5d;
-  --ds-sel: #ffffff;
-
-  --ds-box: #c9a27b;
-  --ds-tape: #f3efe6;
-  --ds-shadow: rgba(0, 0, 0, 0.45);
-  --ds-wheel: #07090c;
-  --ds-radius: 12px;
-  --ds-font-sans: "Inter", system-ui, -apple-system, sans-serif;
-  --ds-font-mono: "JetBrains Mono", ui-monospace, monospace;
-  --ds-font-display: "Instrument Serif", Georgia, serif;
-}
-
-:root[data-theme="light"] {
-  --ds-bg: #f3efe6;
-  --ds-bg-2: #ebe6db;
-  --ds-fg: #0e1116;
-  --ds-fg-soft: rgba(14, 17, 22, 0.7);
-  --ds-fg-muted: rgba(14, 17, 22, 0.48);
-  --ds-line: rgba(14, 17, 22, 0.18);
-  --ds-accent: #008a68;
-
-  --ds-floor: #f8f5ee;
-  --ds-grid: rgba(14, 17, 22, 0.05);
-  --ds-zone: #ece6d9;
-  --ds-belt: #d9d1c1;
-  --ds-truck: #ddd5c6;
-  --ds-van: #ddd5c6;
-
-  --ds-raw: #6b6457;
-  --ds-a: #008a68;
-  --ds-b: #2563eb;
-  --ds-c: #c27c00;
-  --ds-d: #c2357a;
-
-  --ds-ok: #008a68;
-  --ds-warn: #c27c00;
-  --ds-bad: #d42f2f;
-  --ds-sel: #0e1116;
-  --ds-shadow: rgba(14, 17, 22, 0.14);
-}
-
-/* ── Estilo "Claude": cálido, redondeado y animado ── */
-:root[data-style="claude"] {
   --ds-bg: #1f1d1a;
   --ds-bg-2: #282521;
   --ds-fg: #f2ede4;
@@ -95,6 +28,7 @@
   --ds-sel: #f2ede4;
 
   --ds-box: #c9a27b;
+  --ds-tape: #f3efe6;
   --ds-shadow: rgba(0, 0, 0, 0.5);
   --ds-wheel: #12110f;
   --ds-radius: 20px;
@@ -102,7 +36,7 @@
   --ds-font-mono: "DM Mono", ui-monospace, monospace;
   --ds-font-display: "Fraunces", Georgia, serif;
 }
-:root[data-style="claude"][data-theme="light"] {
+:root[data-theme="light"] {
   --ds-bg: #f4efe6;
   --ds-bg-2: #fbf8f3;
   --ds-fg: #1f1e1c;
@@ -134,33 +68,8 @@
   --ds-wheel: #3a3632;
 }
 
-/* piezas de interfaz más blandas en el estilo Claude */
-:root[data-style="claude"] .ds-btn,
-:root[data-style="claude"] .ds-field select,
-:root[data-style="claude"] .ds-track input { border-radius: 999px; }
-:root[data-style="claude"] .ds-card,
-:root[data-style="claude"] .ds-kpi { border-radius: 18px; border-color: transparent; box-shadow: 0 6px 22px var(--ds-shadow); }
-:root[data-style="claude"] .ds-map-wrap { border-radius: 24px; border-color: transparent; box-shadow: 0 10px 40px var(--ds-shadow); }
-:root[data-style="claude"] .ds-title h1 { font-family: var(--ds-font-display); font-weight: 600; font-size: 28px; letter-spacing: -0.02em; }
-:root[data-style="claude"] .ds-title h1 em { font-style: italic; font-weight: 400; font-size: 26px; }
-:root[data-style="claude"] .ds-panel-head h2 { font-family: var(--ds-font-display); text-transform: none; font-size: 20px; letter-spacing: 0; }
-:root[data-style="claude"] .ds-btn--out { background: var(--ds-accent); color: var(--ds-bg-2); border-color: var(--ds-accent); }
-:root[data-style="claude"] .ds-kpi strong { transition: color .3s; }
-:root[data-style="claude"] .ds-btn:hover { transform: translateY(-1px); }
-@media (prefers-reduced-motion: no-preference) {
-  :root[data-style="claude"] .ds-card { animation: ds-rise .5s cubic-bezier(.2,.8,.2,1) both; }
-}
-@keyframes ds-rise { from { transform: translateY(6px); opacity: .6; } to { transform: none; opacity: 1; } }
-
-/* selector de estilo */
 .ds-actions { display: flex; align-items: center; gap: 8px; }
-.ds-style { display: inline-flex; padding: 3px; border-radius: 999px; border: 1px solid var(--ds-line); }
-.ds-style button {
-  border: 0; background: transparent; cursor: pointer;
-  padding: 6px 12px; border-radius: 999px; font-size: 12px; color: var(--ds-fg-soft);
-}
-.ds-style button[aria-pressed="true"] { background: var(--ds-fg); color: var(--ds-bg); }
-.ds-style button:focus-visible, .ds-btn:focus-visible, .ds-icon:focus-visible { outline: 2px solid var(--ds-accent); outline-offset: 2px; }
+.ds-btn:focus-visible, .ds-icon:focus-visible { outline: 2px solid var(--ds-accent); outline-offset: 2px; }
 
 * { box-sizing: border-box; }
 html, body { margin: 0; }
@@ -404,3 +313,21 @@ button, select, input { font: inherit; color: inherit; }
 @media (prefers-reduced-motion: reduce) {
   .ds-live { animation: none; }
 }
+
+/* piezas de interfaz blandas (al final para ganar a las reglas base) */
+:root .ds-btn,
+:root .ds-field select,
+:root .ds-track input { border-radius: 999px; }
+:root .ds-card,
+:root .ds-kpi { border-radius: 18px; border-color: transparent; box-shadow: 0 6px 22px var(--ds-shadow); }
+:root .ds-map-wrap { border-radius: 24px; border-color: transparent; box-shadow: 0 10px 40px var(--ds-shadow); }
+:root .ds-title h1 { font-family: var(--ds-font-display); font-weight: 600; font-size: 28px; letter-spacing: -0.02em; }
+:root .ds-title h1 em { font-style: italic; font-weight: 400; font-size: 26px; }
+:root .ds-panel-head h2 { font-family: var(--ds-font-display); text-transform: none; font-size: 20px; letter-spacing: 0; }
+:root .ds-btn--out { background: var(--ds-accent); color: var(--ds-bg-2); border-color: var(--ds-accent); }
+:root .ds-kpi strong { transition: color .3s; }
+:root .ds-btn:hover { transform: translateY(-1px); }
+@media (prefers-reduced-motion: no-preference) {
+  :root .ds-card { animation: ds-rise .5s cubic-bezier(.2,.8,.2,1) both; }
+}
+@keyframes ds-rise { from { transform: translateY(6px); opacity: .6; } to { transform: none; opacity: 1; } }

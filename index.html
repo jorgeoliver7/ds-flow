@@ -16,13 +16,11 @@
     (function () {
       var t = "dark"; try { t = localStorage.getItem("a-theme") || "dark"; } catch (e) {}
       document.documentElement.dataset.theme = t === "light" ? "light" : "dark";
-      var st = "claude"; try { st = localStorage.getItem("ds-style") || "claude"; } catch (e) {}
-      document.documentElement.dataset.style = st === "editorial" ? "editorial" : "claude";
     })();
   </script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500;600&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=DM+Mono:wght@400;500&family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;1,9..144,400&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=DM+Mono:wght@400;500&family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;1,9..144,400&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="ds-flow.css">
 </head>
 <body>
@@ -33,10 +31,6 @@
       <p>Una estación de reparto de última milla, simulada. Mete camiones, llama furgonetas y rastrea cualquier paquete.</p>
     </div>
     <div class="ds-actions">
-      <div class="ds-style" role="group" aria-label="Estilo visual">
-        <button type="button" data-style-pick="claude" aria-pressed="true">Claude</button>
-        <button type="button" data-style-pick="editorial" aria-pressed="false">Editorial</button>
-      </div>
       <button class="ds-icon" id="ds-theme" aria-label="Cambiar tema">☀</button>
     </div>
   </header>

@@ -396,10 +396,8 @@
       box: g("--ds-box"), tape: g("--ds-tape"), shadow: g("--ds-shadow"), wheel: g("--ds-wheel"),
       sans: g("--ds-font-sans"), mono: g("--ds-font-mono"),
     };
-    PLAY = document.documentElement.dataset.style === "claude";
     bgDirty = true;
   }
-  let PLAY = false; // estilo animado "claude"
 
   // Resolución limitada: en móviles con pantallas 3× dibujar a resolución nativa
   // multiplica por 4 el trabajo sin que se note la diferencia.
@@ -421,15 +419,8 @@
     bg.width = canvas.width; bg.height = canvas.height;
     bctx.setTransform(canvas.width / L.width, 0, 0, canvas.height / L.height, 0, 0);
     bctx.fillStyle = C.floor; bctx.fillRect(0, 0, L.width, L.height);
-    if (PLAY) {
-      bctx.fillStyle = C.grid;
-      for (let x = 12; x < L.width; x += 24) for (let y = 12; y < L.height; y += 24) bctx.fillRect(x - 1, y - 1, 2, 2);
-    } else {
-      bctx.strokeStyle = C.grid; bctx.lineWidth = 1; bctx.beginPath();
-      for (let x = 0; x < L.width; x += 40) { bctx.moveTo(x + 0.5, 0); bctx.lineTo(x + 0.5, L.height); }
-      for (let y = 0; y < L.height; y += 40) { bctx.moveTo(0, y + 0.5); bctx.lineTo(L.width, y + 0.5); }
-      bctx.stroke();
-    }
+    bctx.fillStyle = C.grid;
+    for (let x = 12; x < L.width; x += 24) for (let y = 12; y < L.height; y += 24) bctx.fillRect(x - 1, y - 1, 2, 2);
     bgDirty = false;
   }
 
@@ -443,10 +434,10 @@
     ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
     ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
   }
-  // superficie de zona: en el estilo animado lleva sombra suave
+  // superficie de zona con sombra suave
   function card(x, y, w, h, r) {
-    const rad = PLAY ? r + 6 : r;
-    if (PLAY) softShadow(x, y, w, h, rad, 4);
+    const rad = r + 6;
+    softShadow(x, y, w, h, rad, 4);
     ctx.fillStyle = C.zone; rr(x, y, w, h, rad); ctx.fill();
   }
   const isSel = (kind, id) => S.selected && S.selected.kind === kind && S.selected.id === id;
@@ -476,9 +467,8 @@
       ctx.save(); ctx.lineCap = "round"; ctx.lineJoin = "round";
       ctx.strokeStyle = C.belt; ctx.lineWidth = w; ctx.setLineDash([]);
       ctx.beginPath(); pts.forEach((p, i) => (i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y))); ctx.stroke();
-      if (PLAY) { ctx.strokeStyle = C.floor; ctx.lineWidth = w - 5; ctx.setLineDash([2, 6]); }
-      else { ctx.strokeStyle = C.grid; ctx.lineWidth = 1.5; ctx.setLineDash([4, 9]); }
-      ctx.lineDashOffset = S.paused ? 0 : -time * (PLAY ? 12 : 20) * Math.min(S.speed * 6, 4);
+      ctx.strokeStyle = C.floor; ctx.lineWidth = w - 5; ctx.setLineDash([2, 6]);
+      ctx.lineDashOffset = S.paused ? 0 : -time * 12 * Math.min(S.speed * 6, 4);
       ctx.beginPath(); pts.forEach((p, i) => (i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y))); ctx.stroke();
       ctx.restore();
     };
@@ -507,17 +497,15 @@
   function drawTruck(t) {
     const off = t.state === "arriving" ? (1 - ease(t.p)) * -130 : t.state === "leaving" ? ease(t.p) * -130 : 0;
     const w = 66, h = 96, x = dockX(t.dock) - w / 2, y = D.wallY - h - 6 + off;
-    if (PLAY) {
-      const moving = t.state !== "unloading";
-      ctx.fillStyle = C.wheel;
-      for (const wy of [y + 18, y + h - 22]) for (const wx of [x - 4, x + w - 2]) {
-        rr(wx, wy, 6, 14, 2); ctx.fill();
-        if (moving) { ctx.fillStyle = C.floor; ctx.fillRect(wx + 1, wy + ((NOW * 40) % 12), 4, 2); ctx.fillStyle = C.wheel; }
-      }
-      if (moving && Math.random() < 0.3) burst(x + w / 2 + (Math.random() - 0.5) * 20, y - 10, C.line, 1, 0.5);
-      softShadow(x, y, w, h, 10, 3);
-      ctx.fillStyle = C.truck; rr(x, y, w, h, 10); ctx.fill();
-    } else { ctx.fillStyle = C.truck; rr(x, y, w, h, 5); ctx.fill(); }
+    const moving = t.state !== "unloading";
+    ctx.fillStyle = C.wheel;
+    for (const wy of [y + 18, y + h - 22]) for (const wx of [x - 4, x + w - 2]) {
+      rr(wx, wy, 6, 14, 2); ctx.fill();
+      if (moving) { ctx.fillStyle = C.floor; ctx.fillRect(wx + 1, wy + ((NOW * 40) % 12), 4, 2); ctx.fillStyle = C.wheel; }
+    }
+    if (moving && Math.random() < 0.3) burst(x + w / 2 + (Math.random() - 0.5) * 20, y - 10, C.line, 1, 0.5);
+    softShadow(x, y, w, h, 10, 3);
+    ctx.fillStyle = C.truck; rr(x, y, w, h, 10); ctx.fill();
     if (isSel("truck", t.id)) { ctx.strokeStyle = C.sel; ctx.lineWidth = 2; ctx.stroke(); }
     ctx.fillStyle = C.line; rr(x + 10, y - 8, w - 20, 12, 3); ctx.fill(); // cabina
     ctx.fillStyle = C.raw; ctx.fillRect(x + 7, y + h - 12, (w - 14) * (t.units / t.total), 4);
@@ -529,14 +517,14 @@
   const movePos = (m) => posOf({ pts: m.pts, segs: m.segs, d: Math.min(m.p, 1) * m.total });
 
   function drawCartIcon(x, y, w, h, fill, color, open, k) {
-    if (PLAY) { ctx.fillStyle = C.wheel; ctx.fillRect(x + 2, y + h - 1, 3, 3); ctx.fillRect(x + w - 5, y + h - 1, 3, 3); }
-    ctx.fillStyle = C.floor; rr(x, y, w, h, PLAY ? 4 : 2); ctx.fill();
-    ctx.save(); rr(x, y, w, h, PLAY ? 4 : 2); ctx.clip();
+    ctx.fillStyle = C.wheel; ctx.fillRect(x + 2, y + h - 1, 3, 3); ctx.fillRect(x + w - 5, y + h - 1, 3, 3);
+    ctx.fillStyle = C.floor; rr(x, y, w, h, 4); ctx.fill();
+    ctx.save(); rr(x, y, w, h, 4); ctx.clip();
     ctx.fillStyle = C.box; const fh = h * fill * (1 + (k || 0) * 0.08);
     ctx.fillRect(x, y + h - fh, w, fh); ctx.restore();
     ctx.strokeStyle = color; ctx.lineWidth = 1.5;
     if (open) ctx.setLineDash([3, 2]);
-    rr(x, y, w, h, PLAY ? 4 : 2); ctx.stroke(); ctx.setLineDash([]);
+    rr(x, y, w, h, 4); ctx.stroke(); ctx.setLineDash([]);
   }
 
   function drawStaging() {
@@ -553,14 +541,14 @@
     const cw = 16, ch = 22, gap = 5;
     for (let i = 0; i < S.lanes.length; i++) {
       const l = S.lanes[i], lr = laneRect(l), col = C.aisle[l.group.aisles[0]];
-      ctx.fillStyle = C.floor; rr(lr.x, lr.y, lr.w, lr.h, PLAY ? 8 : 4); ctx.fill();
+      ctx.fillStyle = C.floor; rr(lr.x, lr.y, lr.w, lr.h, 8); ctx.fill();
       if (isSel("lane", i)) { ctx.strokeStyle = C.sel; ctx.lineWidth = 2; ctx.stroke(); }
       text(l.cls.short, lr.x + 5, lr.y + lr.h - 12, MONO(600, 8), C.muted);
       const carts = (l.open ? [l.open] : []).concat(l.closed);
       const perRow = Math.floor((lr.w - 6) / (cw + gap)), rows = 2, max = perRow * rows;
       carts.slice(0, max).forEach((c, j) => {
         const x = lr.x + 5 + (j % perRow) * (cw + gap), y = lr.y + 5 + Math.floor(j / perRow) * (ch + 6);
-        drawCartIcon(x, y, cw, ch, c.items.length / l.cls.cap, col, c === l.open, PLAY ? bump(c.bump || 0, NOW) : 0);
+        drawCartIcon(x, y, cw, ch, c.items.length / l.cls.cap, col, c === l.open, bump(c.bump || 0, NOW));
       });
       if (carts.length > max) text("+" + (carts.length - max), lr.x + lr.w - 4, lr.y + lr.h - 12, MONO(600, 8), C.soft, "right");
     }
@@ -600,19 +588,17 @@
     for (const r of S.routes) {
       let b = bagRect(r);
       const col = C.aisle[r.aisle], f = Math.min(r.bag.length / ST.bagCapacity, 1);
-      if (PLAY) {
-        // la saca se infla con la carga y rebota al recibir un paquete
-        const k = bump(r.bump || 0, NOW), sx = 0.9 + f * 0.1 + k * 0.06, sy = 0.92 + f * 0.08 - k * 0.04;
-        b = { x: b.x + (b.w * (1 - sx)) / 2, y: b.y + b.h * (1 - sy), w: b.w * sx, h: b.h * sy };
-        ctx.fillStyle = col; rr(b.x + b.w / 2 - 5, b.y - 4, 10, 6, 3); ctx.fill(); // nudo
-      }
-      ctx.fillStyle = C.floor; rr(b.x, b.y, b.w, b.h, PLAY ? 10 : 6); ctx.fill();
-      ctx.save(); rr(b.x, b.y, b.w, b.h, PLAY ? 10 : 6); ctx.clip();
+      // la saca se infla con la carga y rebota al recibir un paquete
+      const k = bump(r.bump || 0, NOW), sx = 0.9 + f * 0.1 + k * 0.06, sy = 0.92 + f * 0.08 - k * 0.04;
+      b = { x: b.x + (b.w * (1 - sx)) / 2, y: b.y + b.h * (1 - sy), w: b.w * sx, h: b.h * sy };
+      ctx.fillStyle = col; rr(b.x + b.w / 2 - 5, b.y - 4, 10, 6, 3); ctx.fill(); // nudo
+      ctx.fillStyle = C.floor; rr(b.x, b.y, b.w, b.h, 10); ctx.fill();
+      ctx.save(); rr(b.x, b.y, b.w, b.h, 10); ctx.clip();
       ctx.fillStyle = col; ctx.globalAlpha = 0.7; ctx.fillRect(b.x, b.y + b.h * (1 - f), b.w, b.h * f); ctx.restore();
       const full = r.bag.length >= ST.bagCapacity, sel = isSel("route", r.n);
       ctx.lineWidth = r.van || sel || full ? 2 : 1;
       ctx.strokeStyle = sel ? C.sel : full ? C.bad : r.van ? C.ok : C.line;
-      rr(b.x, b.y, b.w, b.h, PLAY ? 10 : 6); ctx.stroke();
+      rr(b.x, b.y, b.w, b.h, 10); ctx.stroke();
       ctx.textBaseline = "top";
       text(r.code, b.x + b.w / 2, b.y + 5, MONO(600, 9), C.fg, "center");
       text(String(r.bag.length), b.x + b.w / 2, b.y + b.h - 15, MONO(600, 10), C.fg, "center");
@@ -663,22 +649,20 @@
       const off = v.state === "arriving" ? (1 - ease(v.p)) * 120 : v.state === "leaving" ? ease(v.p) * -120 : 0;
       ctx.globalAlpha = v.state === "arriving" ? Math.max(ease(v.p), 0.05) : v.state === "leaving" ? 1 - ease(v.p) : 1;
       let x = p.x + 6, y = p.y + 12 + off, w = p.w - 12, h = p.h - 18;
-      if (PLAY) {
-        // la furgoneta se hunde un poco con cada paquete y lleva ruedas que giran al moverse
-        const k = bump(v.bump || 0, NOW);
-        y += k * 2;
-        ctx.fillStyle = C.wheel;
-        for (const wy of [y + 10, y + h - 16]) for (const wx of [x - 3, x + w - 3]) {
-          rr(wx, wy, 6, 11, 2); ctx.fill();
-          if (v.state !== "loading") { ctx.fillStyle = C.floor; ctx.fillRect(wx + 1, wy + ((NOW * 40) % 9), 4, 2); ctx.fillStyle = C.wheel; }
-        }
-        if (v.state === "leaving" && Math.random() < 0.5) burst(x + w / 2, y + h + 4, C.line, 1, 0.6);
-        softShadow(x, y, w, h, 12, 3);
-        ctx.fillStyle = C.van; rr(x, y, w, h, 12); ctx.fill();
-        ctx.fillStyle = C.line; rr(x + 8, y - 3, w - 16, 6, 3); ctx.fill(); // parabrisas
-      } else { ctx.fillStyle = C.van; rr(x, y, w, h, 6); ctx.fill(); }
+      // la furgoneta se hunde un poco con cada paquete y lleva ruedas que giran al moverse
+      const k = bump(v.bump || 0, NOW);
+      y += k * 2;
+      ctx.fillStyle = C.wheel;
+      for (const wy of [y + 10, y + h - 16]) for (const wx of [x - 3, x + w - 3]) {
+        rr(wx, wy, 6, 11, 2); ctx.fill();
+        if (v.state !== "loading") { ctx.fillStyle = C.floor; ctx.fillRect(wx + 1, wy + ((NOW * 40) % 9), 4, 2); ctx.fillStyle = C.wheel; }
+      }
+      if (v.state === "leaving" && Math.random() < 0.5) burst(x + w / 2, y + h + 4, C.line, 1, 0.6);
+      softShadow(x, y, w, h, 12, 3);
+      ctx.fillStyle = C.van; rr(x, y, w, h, 12); ctx.fill();
+      ctx.fillStyle = C.line; rr(x + 8, y - 3, w - 16, 6, 3); ctx.fill(); // parabrisas
       ctx.fillStyle = C.aisle[r.aisle]; ctx.fillRect(x + 4, y, w - 8, 3);
-      if (isSel("van", v.id)) { ctx.strokeStyle = C.sel; ctx.lineWidth = 2; rr(x, y, w, h, PLAY ? 12 : 6); ctx.stroke(); }
+      if (isSel("van", v.id)) { ctx.strokeStyle = C.sel; ctx.lineWidth = 2; rr(x, y, w, h, 12); ctx.stroke(); }
       ctx.fillRect(x + 6, y + h - 9, (w - 12) * (v.loaded / Math.max(v.expected, 1)), 4);
       ctx.textBaseline = "top";
       text(v.id, x + 6, y + 9, MONO(600, 10), C.fg);
@@ -693,7 +677,6 @@
     for (const tr of S.transit) {
       const p = posOf(tr), pkg = tr.pkg;
       const col = pkg.sorted ? C.aisle[S.routes[pkg.route - 1].aisle] : C.raw;
-      if (!PLAY) { ctx.fillStyle = col; ctx.fillRect(p.x - 3.5, p.y - 3.5, 7, 7); continue; }
       // cajita de cartón que se balancea, con la cinta del color de su pasillo
       const seed = pkg.seed || (pkg.seed = Math.random() * 6.28);
       const big = pkg.size === "Oversize" ? 1.35 : pkg.size === "Sobre" ? 0.8 : 1;
@@ -711,7 +694,7 @@
   // ── Partículas (solo estilo animado) ──────────────────
   const fx = [];
   function burst(x, y, color, n, power) {
-    if (!PLAY || fx.length > 400) return;
+    if (fx.length > 400) return;
     for (let i = 0; i < n; i++) {
       const a = Math.random() * Math.PI * 2, v = (0.4 + Math.random()) * power;
       fx.push({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v - power * 0.6, life: 1, color, r: 1.5 + Math.random() * 2 });
@@ -762,7 +745,7 @@
     drawTransit(time);
     drawFx(time);
     const tp = trackedPos();
-    if (tp && PLAY) {
+    if (tp) {
       // ondas que salen del paquete rastreado
       for (let i = 0; i < 3; i++) {
         const ph = (time * 0.8 + i / 3) % 1;
@@ -960,16 +943,6 @@
     themeBtn.textContent = t === "light" ? "☾" : "☀";
     readColors();
   }
-  // Estilo visual: "claude" (cálido y animado) o "editorial" (sobrio, el del portfolio)
-  const stylePicks = document.querySelectorAll("[data-style-pick]");
-  function applyStyle(st) {
-    document.documentElement.dataset.style = st;
-    try { localStorage.setItem("ds-style", st); } catch (e) {}
-    stylePicks.forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.stylePick === st)));
-    readColors();
-  }
-  stylePicks.forEach((b) => b.addEventListener("click", () => applyStyle(b.dataset.stylePick)));
-  applyStyle(document.documentElement.dataset.style === "editorial" ? "editorial" : "claude");
   themeBtn.addEventListener("click", () => applyTheme(document.documentElement.dataset.theme === "light" ? "dark" : "light"));
   let saved = "dark"; try { saved = localStorage.getItem("a-theme") || "dark"; } catch (e) {}
   applyTheme(saved === "light" ? "light" : "dark");
