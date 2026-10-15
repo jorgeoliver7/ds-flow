@@ -11,14 +11,14 @@ function run(E, minutes, check) {
 }
 const shift = (opts) => { const E = DSEngine.create(L, opts); run(E, 700); return E; };
 
-test("no se pierde ningún paquete: recibidos = en planta + despachados", () => {
+test("no se pierde ningún paquete: recibidos = en planta + despachados + dados de baja", () => {
   const E = DSEngine.create(L, { seed: 3 });
   let i = 0;
   run(E, 700, (E) => {
     if (i++ % 50) return;
-    assert.equal(E.S.received, E.inPlantCount() + E.S.dispatched);
+    assert.equal(E.S.received, E.inPlantCount() + E.S.dispatched + E.S.writtenOff);
   });
-  assert.equal(E.S.received, E.inPlantCount() + E.S.dispatched);
+  assert.equal(E.S.received, E.inPlantCount() + E.S.dispatched + E.S.writtenOff);
 });
 
 test("la misma semilla da la misma partida", () => {
@@ -71,9 +71,52 @@ test("el planificador prevé un sort más temprano con más gente y más tarde c
 test("métricas por proceso, horas trabajadas y tiempo de ciclo", () => {
   const E = shift({ seed: 7 });
   const m = E.metrics();
-  assert.deepEqual(m.processes.map((p) => p.key), ["receive", "induct", "stow", "pick"]);
+  assert.deepEqual(m.processes.map((p) => p.key), ["receive", "induct", "stow", "pick", "ps"]);
   assert.ok(m.laborHours > 50 && m.laborHours < 250, `horas ${m.laborHours}`);
   assert.ok(m.pph > 0);
   for (const c of m.cycle) assert.ok(c.min > 0, c.key);
   assert.ok(m.waves.every((w) => w.done));
+});
+
+test("incidencias: los missorts se detectan en pick y se resuelven en problem solve", () => {
+  const E = DSEngine.create(L, { seed: 7 });
+  let seen = null, fixed = false;
+  run(E, 700, (E) => {
+    if (!seen) for (const p of E.S.pkgs.values()) if (p.missorted && p.where === "bag") { seen = p; break; }
+    if (seen && !fixed && seen.hist.some((h) => h.msg.startsWith("Resuelto"))) fixed = true;
+  });
+  assert.ok(seen, "algún paquete cae en una saca equivocada");
+  assert.ok(fixed, "y problem solve lo devuelve a su saca");
+  const q = E.metrics().quality;
+  assert.ok(q.missort > 0 && q.damaged > 0 && q.noLabel > 0, JSON.stringify(q));
+  assert.ok(q.missortRate > 0 && q.missortRate < 0.02);
+  assert.ok(q.dpmo > 1000 && q.dpmo < 20000, `dpmo ${q.dpmo}`);
+  assert.equal(q.psOpen, 0, "al final no queda nada en problem solve");
+  assert.ok(q.psAvg > 0);
+});
+
+test("con el conveyor parado no se induce nada", () => {
+  const E = DSEngine.create(L, { seed: 7 });
+  const ev = E.S.plan.events.find((e) => e.type === "conveyor");
+  run(E, ev.at + 1 - E.S.t);
+  assert.ok(E.S.conveyorDown);
+  const queued = E.S.inductQ.length;
+  run(E, ev.minutes - 2);
+  const inducted = [...E.S.pkgs.values()].filter((p) => p.inductAt > ev.at + 0.1).length;
+  assert.equal(inducted, 0);
+  assert.ok(E.S.inductQ.length >= queued, "la cola de inducción crece");
+  run(E, 3);
+  assert.ok(!E.S.conveyorDown);
+});
+
+test("un camión que llega tarde retrasa el sort y se avisa", () => {
+  const L2 = JSON.parse(JSON.stringify(L));
+  L2.shift.events.push({ type: "truckLate", truck: "T-08", minutes: 60 });
+  const logs = [];
+  const base = shift({ seed: 7 }), late = DSEngine.create(L2, { seed: 7, hooks: { log: (m) => logs.push(m) } });
+  run(late, 700);
+  const pt = late.S.plan.trucks.find((x) => x.id === "T-08");
+  assert.ok(pt.dockedAt >= pt.at + 60);
+  assert.ok(late.S.sortDoneAt > base.S.sortDoneAt + 10, `${late.S.sortDoneAt} vs ${base.S.sortDoneAt}`);
+  assert.ok(logs.some((m) => m.includes("T-08 viene con 60 min de retraso")));
 });

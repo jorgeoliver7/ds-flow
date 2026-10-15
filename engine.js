@@ -81,7 +81,7 @@
     opts = opts || {};
     const hooks = Object.assign({ log() {}, fx() {}, now: () => 0 }, opts.hooks);
     const rand = rng(opts.seed == null ? 7 : opts.seed);
-    const D = L.docks, R = L.receive, I = L.induct, CV = L.conveyor, ST = L.stow, P = L.pick, Y = L.yard;
+    const D = L.docks, R = L.receive, I = L.induct, CV = L.conveyor, ST = L.stow, P = L.pick, Y = L.yard, PS = L.problem, Q = L.quality;
     const geo = geometry(L);
     const SH = L.shift, at = (hhmm) => toShift(hhmm, L.shiftStart);
 
@@ -92,7 +92,7 @@
       trucks: [], vans: [], transit: [],
       inductQ: [], moves: [], nextCart: 1,
       acc: { induct: 0, pick: 0 },
-      staff: { receive: R.staff, induct: I.staff, stow: ST.staff, pick: P.staff },
+      staff: { receive: R.staff, induct: I.staff, stow: ST.staff, pick: P.staff, ps: PS.staff },
       aisles: ST.aisles.map((a, i) => ({ ...a, idx: i, queue: [], acc: 0, done: 0 })),
       routes: [],
       received: 0, stowed: 0, sorted: 0, dispatched: 0, delivered: 0, routesOut: 0, routesLate: 0,
@@ -101,8 +101,11 @@
       history: [], lastMinute: 0,
       nextTruck: 101, nextVan: 1, waitLogged: {},
       // productividad real de cada proceso: varía alrededor de 1 durante el turno
-      eff: { receive: 1, induct: 1, stow: 1, pick: 1 },
-      flow: { receive: [], induct: [], stow: [], pick: [], load: [] }, // paquetes por minuto
+      eff: { receive: 1, induct: 1, stow: 1, pick: 1, ps: 1 },
+      flow: { receive: [], induct: [], stow: [], pick: [], load: [], ps: [] }, // paquetes por minuto
+      // calidad
+      psQ: [], psAcc: 0, psTimes: [], conveyorDown: false,
+      issues: { damaged: 0, noLabel: 0, missort: 0 }, writtenOff: 0, unsorted: 0,
       hourly: [],               // por hora del turno: { stow, induct, pick, staff }
       laborMin: 0,              // minutos-persona trabajados
       cyc: { dockInduct: [0, 0], inductStow: [0, 0], stowPick: [0, 0], pickOut: [0, 0] },
@@ -129,11 +132,17 @@
     S.plan = {
       trucks: SH.trucks.map((x, i) => ({ id: "T-" + String(i + 1).padStart(2, "0"), at: at(x.at), units: x.units, state: "pending" })),
       cutoff: at(SH.sortCutoff),
+      events: (SH.events || []).map((e) => ({ ...e, at: e.at ? at(e.at) : null, state: "pending" })),
       waves: SH.waves.map((w, i) => {
         const aisleIdx = w.aisles.map((id) => ST.aisles.findIndex((a) => a.id === id));
         return { n: i + 1, at: at(w.at), deadline: at(w.at) + SH.loadWindow, routes: S.routes.filter((r) => aisleIdx.includes(r.aisle)).map((r) => r.n), pickStarted: false, called: false };
       }),
     };
+    // eta: hora real de llegada. Un retraso solo se conoce cuando el camión no aparece a su hora
+    for (const pt of S.plan.trucks) {
+      const late = S.plan.events.find((e) => e.type === "truckLate" && e.truck === pt.id);
+      pt.eta = pt.at; pt.delay = late ? late.minutes : 0;
+    }
     S.plan.volume = S.plan.trucks.reduce((s, x) => s + x.units, 0);
     S.plan.firstTruck = Math.min(...S.plan.trucks.map((x) => x.at));
     S.plan.waves.forEach((w) => w.routes.forEach((n) => (S.routes[n - 1].wave = w)));
@@ -186,7 +195,7 @@
       let id;
       do { id = "DS" + String(Math.floor(rand() * 1e8)).padStart(8, "0"); } while (S.pkgs.has(id));
       const r = pickRoute(), sz = SIZES[Math.floor(rand() ** 1.6 * SIZES.length)];
-      r.upstream++;
+      r.upstream++; S.unsorted++;
       const p = {
         id, route: r.n, size: sz[0], cls: sz[2], group: groupOfAisle(r.aisle), weight: +(sz[1] * (0.6 + rand() * 0.8)).toFixed(1),
         cp: "11" + String(Math.floor(rand() * 690) + 1).padStart(3, "0"),
@@ -224,15 +233,23 @@
         }
         case "induct": p.where = "induct"; S.inductQ.push(p); break;
         case "aisle": p.where = "aisle"; S.aisles[r.aisle].queue.push(p); break;
-        case "bag":
-          p.where = "bag"; r.bag.push(p); S.stowed++; S.sorted++; r.upstream--; S.stowLog.push(S.t);
+        case "bag": {
+          // tr.bag: la saca en la que realmente cae (distinta de su ruta si es un missort)
+          const br = S.routes[(tr.bag || p.route) - 1];
+          p.where = "bag"; p.bag = br.n; br.bag.push(p); S.stowed++; S.stowLog.push(S.t);
+          // para el sort cuenta el primer stow, aunque sea en la saca equivocada
+          if (!p.stowedOnce) { p.stowedOnce = true; S.unsorted--; }
+          br.bump = hooks.now();
+          hooks.fx("stow", { route: br });
+          if (br !== r) { hist(p, `Stow por error en la saca ${br.code} (su ruta es ${r.code})`); break; }
+          S.sorted++; r.upstream--;
           p.stowAt = S.t; if (p.inductAt != null) cycAdd("inductStow", S.t - p.inductAt);
           if (r.dispatched) hist(p, `Llega tarde: la furgoneta de ${r.code} ya salió (rollover)`);
-          r.bump = hooks.now();
-          hooks.fx("stow", { route: r });
           S.dockToStow.push(S.t - p.unloadedAt); trim(S.dockToStow, 120);
           hist(p, `Stow en la saca ${r.code} · pasillo ${ST.aisles[r.aisle].id}`);
           break;
+        }
+        case "ps": p.where = "ps"; p.psAt = S.t; S.psQ.push(p); break;
         case "cart": p.where = "cart"; r.cart.push(p); p.pickAt = S.t; if (p.stowAt != null) cycAdd("stowPick", S.t - p.stowAt); hist(p, `Pick · carro de ${r.code}`); break;
         case "van": {
           const v = S.vans.find((x) => x.id === tr.van);
@@ -241,6 +258,39 @@
           hist(p, `Cargado en la furgoneta ${tr.van}`);
           break;
         }
+      }
+    }
+
+    // ── Problem solve ─────────────────────────────────────
+    const psIn = () => ({ x: PS.x + PS.w / 2, y: PS.y + PS.h - 14 });
+    function toPS(p, issue, from) {
+      p.issue = issue; S.issues[issue]++;
+      const label = { damaged: "dañado", noLabel: "etiqueta ilegible", missort: "mal clasificado" }[issue];
+      hist(p, `A problem solve: ${label}`);
+      // por el pasillo bajo la zona de carros (o por el lateral de las sacas) hasta problem solve
+      const gy = R.y + R.h + 8, c = psIn();
+      const pts = from.y > gy + 10
+        ? [from, { x: ST.x + ST.w + 8, y: from.y }, { x: ST.x + ST.w + 8, y: gy }, { x: c.x, y: gy }, c]
+        : [from, { x: from.x, y: gy }, { x: c.x, y: gy }, c];
+      send(p, pts, "ps");
+    }
+    function resolvePS(p) {
+      const r = S.routes[p.route - 1];
+      S.psTimes.push(S.t - p.psAt); trim(S.psTimes, 200); count("ps");
+      if (p.issue === "damaged" && rand() < Q.writeOff) {
+        p.where = "writtenoff"; S.writtenOff++; r.upstream--; if (!p.stowedOnce) S.unsorted--;
+        hist(p, "Sin arreglo: se da de baja y se avisa al cliente");
+        return;
+      }
+      const c = psIn(), gy = R.y + R.h + 8;
+      if (p.issue === "missort") {
+        // ya sabemos su ruta: va directo a su saca
+        const b = geo.bagCenter(r);
+        hist(p, `Resuelto: vuelve a la saca de ${r.code}`);
+        send(p, [c, { x: c.x, y: gy }, { x: ST.x + ST.w + 8, y: gy }, { x: ST.x + ST.w + 8, y: b.y }, b], "bag");
+      } else {
+        hist(p, p.issue === "damaged" ? "Reembalado: vuelve a inducción" : "Reetiquetado: vuelve a inducción");
+        send(p, [c, { x: c.x, y: gy }, { x: I.x + I.w / 2, y: gy }, { x: I.x + I.w / 2, y: I.y + I.h - 22 }], "induct");
       }
     }
 
@@ -325,6 +375,8 @@
       // Camiones del plan: atracan a su hora si hay muelle libre; si no, esperan
       if (S.auto) for (const pt of S.plan.trucks) {
         if (pt.state !== "pending" || S.t < pt.at) continue;
+        if (pt.delay && pt.eta === pt.at) { pt.eta = pt.at + pt.delay; log(`Camión ${pt.id} viene con ${pt.delay} min de retraso (llega a las ${clock(L, pt.eta)})`, "bad"); }
+        if (S.t < pt.eta) continue;
         const dock = freeDock();
         if (dock < 0) { if (!S.waitLogged[pt.id]) { S.waitLogged[pt.id] = true; log(`Camión ${pt.id} espera muelle libre`, "warn"); } continue; }
         pt.state = "docked"; pt.dockedAt = S.t;
@@ -339,6 +391,7 @@
           while (t.acc >= 1 && t.units > 0) {
             t.acc--; t.units--; S.received++;
             const p = newPkg(t), x = geo.dockX(t.dock);
+            if (rand() < Q.damaged) { toPS(p, "damaged", { x, y: D.wallY }); continue; }
             const lc = geo.laneCenter(laneOf(p));
             send(p, [{ x, y: D.wallY }, { x, y: R.y - 2 }, { x: lc.x, y: R.y - 2 }, { x: lc.x, y: lc.y }], "receive");
           }
@@ -370,9 +423,11 @@
 
       // Inducción → conveyor → pasillo
       S.acc.induct = Math.min(S.acc.induct + (rate(I.rate, "induct", I) / 60) * dt, 3);
+      if (S.conveyorDown) S.acc.induct = 0;
       while (S.acc.induct >= 1 && S.inductQ.length) {
         S.acc.induct--;
         const p = S.inductQ.shift(), r = S.routes[p.route - 1], a = ST.aisles[r.aisle];
+        if (p.issue !== "noLabel" && rand() < Q.noLabel) { count("induct"); toPS(p, "noLabel", { x: I.x + I.w / 2, y: I.y + I.h - 22 }); continue; }
         p.sorted = true;
         hist(p, `Inducido · ruta ${r.code} → pasillo ${a.id}`);
         count("induct"); p.inductAt = S.t; cycAdd("dockInduct", S.t - p.unloadedAt);
@@ -385,8 +440,15 @@
         a.acc = Math.min(a.acc + (perAisle / 60) * dt, 3);
         while (a.acc >= 1 && a.queue.length) {
           a.acc--; a.done++; count("stow");
-          const p = a.queue.shift(), r = S.routes[p.route - 1], b = geo.bagCenter(r);
-          send(p, [{ x: ST.x + 8, y: geo.beltY(a) }, { x: b.x, y: geo.beltY(a) }, b], "bag");
+          const p = a.queue.shift(), r = S.routes[p.route - 1];
+          // missort: acaba en la saca de al lado
+          let br = r;
+          if (!p.issue && rand() < Q.missort) {
+            br = S.routes[r.j < ST.routesPerAisle - 1 ? r.n : r.n - 2];
+            S.issues.missort++; p.missorted = true;
+          }
+          const b = geo.bagCenter(br);
+          send(p, [{ x: ST.x + 8, y: geo.beltY(a) }, { x: b.x, y: geo.beltY(a) }, b], "bag", { bag: br.n });
         }
       }
 
@@ -416,6 +478,8 @@
           S.acc.pick--; count("pick");
           const p = r.bag.shift();
           const b = geo.bagCenter(r), c = geo.cartCenter(r);
+          // el picker ve que el paquete no es de esta ruta (toPS lo vuelve a contar, de ahí el --)
+          if (p.route !== r.n) { S.issues.missort--; toPS(p, "missort", b); continue; }
           hist(p, `Pick de la saca de ${r.code}`);
           send(p, [b, { x: ST.x + ST.w, y: b.y }, { x: P.x, y: c.y }, c], "cart");
         }
@@ -438,10 +502,23 @@
       }
       S.vans = S.vans.filter((v) => !(v.state === "leaving" && v.p >= 1));
 
+      // Eventos programados: conveyor parado
+      for (const ev of S.plan.events) {
+        if (ev.type !== "conveyor") continue;
+        if (ev.state === "pending" && S.t >= ev.at) { ev.state = "active"; S.conveyorDown = true; log(`Conveyor parado por avería (${ev.minutes} min previstos)`, "bad"); }
+        if (ev.state === "active" && S.t >= ev.at + ev.minutes) { ev.state = "done"; S.conveyorDown = false; log("Conveyor en marcha otra vez", "out"); }
+      }
+
+      // Problem solve
+      S.psAcc = Math.min(S.psAcc + (rate(PS.uph * PS.staff, "ps", PS) / 60) * dt, 2);
+      // cada incidencia lleva unos minutos de revisión (reetiquetar, reembalar, buscar su ruta)
+      while (S.psAcc >= 1 && S.psQ.length && S.t - S.psQ[0].psAt >= PS.handleMin) { S.psAcc--; resolvePS(S.psQ.shift()); }
+      if (!S.psQ.length) S.psAcc = Math.min(S.psAcc, 1);
+
       // Tránsito
       const still = [];
       for (const tr of S.transit) {
-        tr.d += CV.speed * dt;
+        if (!(tr.belt && S.conveyorDown)) tr.d += CV.speed * dt;
         if (tr.d >= tr.total) arrive(tr); else still.push(tr);
       }
       S.transit = still;
@@ -459,13 +536,13 @@
       // Horas trabajadas y deriva de la productividad (cada 10 min)
       // el equipo de sort trabaja de noche (hasta acabar el sort) y el de pick desde la primera oleada
       const sortCrew = S.t >= S.plan.firstTruck - 15 && S.sortDoneAt == null, pickCrew = S.t >= S.plan.pickStart && !S.over;
-      S.laborMin += ((sortCrew ? S.staff.receive + S.staff.induct + S.staff.stow : 0) + (pickCrew ? S.staff.pick : 0)) * dt;
+      S.laborMin += ((sortCrew ? S.staff.receive + S.staff.induct + S.staff.stow : 0) + (pickCrew ? S.staff.pick : 0) + (sortCrew || pickCrew ? S.staff.ps : 0)) * dt;
       if (Math.floor(S.t / 10) !== Math.floor((S.t - dt) / 10)) {
         for (const k in S.eff) S.eff[k] = Math.min(1.08, Math.max(0.82, S.eff[k] + (rand() - 0.5) * 0.08));
       }
 
       // Fin del sort y fin del turno
-      if (S.sortDoneAt == null && S.plan.trucks.every((x) => x.state !== "pending") && !S.trucks.some((t) => t.units > 0) && upstreamTotal() === 0) {
+      if (S.sortDoneAt == null && S.plan.trucks.every((x) => x.state !== "pending") && !S.trucks.some((t) => t.units > 0) && S.unsorted === 0) {
         S.sortDoneAt = S.t;
         log(`Sort terminado a las ${clock(L, S.t)}${S.t <= S.plan.cutoff ? " · antes del corte" : " · DESPUÉS del corte"}`, S.t <= S.plan.cutoff ? "out" : "bad");
       }
@@ -489,7 +566,6 @@
       for (const tr of S.transit) if (tr.dest === "cart" && tr.pkg.route === r.n) return true;
       return false;
     }
-    const upstreamTotal = () => S.routes.reduce((s, r) => s + r.upstream, 0);
 
     // Plan de clasificación acumulado: lineal desde el primer camión hasta el corte
     function planAt(t) {
@@ -508,10 +584,10 @@
       if (S.sortDoneAt != null && !staff) return { sortEnd: S.sortDoneAt, done: true };
       const future = S.plan.trucks.filter((x) => x.state === "pending");
       const onDock = S.trucks.reduce((s, t) => s + t.units, 0);
-      const remaining = upstreamTotal() + onDock + future.reduce((s, x) => s + x.units, 0);
+      const remaining = S.unsorted + onDock + future.reduce((s, x) => s + x.units, 0);
       let end = S.t + remaining / sortCap(staff);
       // no se puede acabar antes de descargar y mover el último camión
-      for (const x of future) end = Math.max(end, Math.max(x.at, S.t) + x.units / (D.unloadRate / 60) + 8);
+      for (const x of future) end = Math.max(end, Math.max(x.eta, S.t) + x.units / (D.unloadRate / 60) + 8);
       for (const t of S.trucks) if (t.units) end = Math.max(end, S.t + t.units / (D.unloadRate / 60) + 8);
       return { sortEnd: end, done: false, remaining };
     }
@@ -567,14 +643,22 @@
       const out = S.routes.filter((r) => r.dispatched);
       const cap = ST.bagCapacity;
       const fill = out.length ? avg(out.filter((r) => r.out).map((r) => r.out / (Math.ceil(r.out / cap) * cap))) : null;
-      const rollover = out.reduce((s, r) => s + r.bag.length + r.cart.length + r.upstream, 0);
-      const procs = [["receive", R, "Zona de carros"], ["induct", I, "Inducción"], ["stow", ST, "Stow"], ["pick", P, "Pick"]].map(([key, cfg, name]) => {
+      // rollover: paquetes que siguen en la estación y cuya ruta ya salió
+      let rollover = 0;
+      if (out.length) for (const p of S.pkgs.values()) if (p.where !== "route" && p.where !== "delivered" && p.where !== "writtenoff" && S.routes[p.route - 1].dispatched) rollover++;
+      const defects = S.issues.damaged + S.issues.noLabel + S.issues.missort;
+      const psOpen = S.psQ.length + S.transit.filter((tr) => tr.dest === "ps").length;
+      const procs = [["receive", R, "Zona de carros"], ["induct", I, "Inducción"], ["stow", ST, "Stow"], ["pick", P, "Pick"], ["ps", PS, "Problem solve"]].map(([key, cfg, name]) => {
         const real = hourRate(key);
         return { key, name, staff: S.staff[key], uph: real / S.staff[key], target: cfg.uph, rate: real, cap: rate(cfg.rate || cfg.uph * cfg.staff, key, cfg) };
       });
       const cycle = Object.entries(S.cyc).map(([k, [sum, n]]) => ({ key: k, min: n ? sum / n : null }));
       const laborHours = S.laborMin / 60;
       return {
+        quality: {
+          missortRate: S.sorted ? S.issues.missort / S.sorted : 0, dpmo: S.received ? (defects / S.received) * 1e6 : 0,
+          psOpen, psAvg: S.psTimes.length ? avg(S.psTimes) : null, writtenOff: S.writtenOff, ...S.issues,
+        },
         processes: procs, cycle, laborHours, pph: laborHours > 0.5 ? S.sorted / laborHours : null,
         waves: waveForecast(),
         routesTotal: S.routes.length, routesOut: S.routesOut, routesLate: S.routesLate, routesOnTime: S.routesOut - S.routesLate,
@@ -585,7 +669,7 @@
     // Paquetes que siguen dentro de la estación, contados por estado
     function inPlantCount() {
       let n = 0;
-      for (const p of S.pkgs.values()) if (p.where !== "route" && p.where !== "delivered") n++;
+      for (const p of S.pkgs.values()) if (p.where !== "route" && p.where !== "delivered" && p.where !== "writtenoff") n++;
       return n;
     }
 

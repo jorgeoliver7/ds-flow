@@ -80,7 +80,7 @@
     if (worst && worst.m > 6) al.push([worst.m > 15 ? "bad" : "warn", `Cuello de botella en ${worst.name}: ${Math.round(worst.m)} min de cola`]);
     const overdue = S.vans.filter((v) => v.state === "loading" && S.t > v.deadline);
     if (overdue.length) al.push(["bad", `${overdue.length} furgoneta${overdue.length > 1 ? "s" : ""} fuera de su ventana de salida`]);
-    const waiting = S.plan.trucks.filter((x) => x.state === "pending" && S.t >= x.at).length;
+    const waiting = S.plan.trucks.filter((x) => x.state === "pending" && S.t >= x.eta).length;
     if (waiting) al.push(["warn", `${waiting} camión${waiting > 1 ? "es esperan" : " espera"} muelle libre`]);
     if (E.freePad() < 0) al.push(["warn", "Yard completo: no caben más furgonetas"]);
     if (m.routesLate) al.push(["warn", `${m.routesLate} ruta${m.routesLate > 1 ? "s salieron" : " salió"} tarde`]);
@@ -89,10 +89,14 @@
       const st = procStatus(p);
       if (st === "bad") al.push(["warn", `${p.name} rinde al ${Math.round((p.uph / p.target) * 100)}% del objetivo (${Math.round(p.uph)} de ${p.target} UPH)`]);
     }
+    if (S.conveyorDown) al.unshift(["bad", "Conveyor parado: no se induce nada hasta que vuelva a funcionar"]);
+    if (m.quality.psOpen > 25) al.push([m.quality.psOpen > 60 ? "bad" : "warn", `${m.quality.psOpen} paquetes esperando en problem solve`]);
+    if (m.quality.missortRate > 0.006 && S.sorted > 2000) al.push(["warn", `Missorts al ${(m.quality.missortRate * 100).toFixed(2)}%, por encima del 0,6%`]);
     const lateW = m.waves.filter((w) => !w.done && w.late);
     if (lateW.length) al.push(["bad", `Con el ritmo actual saldrían tarde ${lateW.map((w) => "la oleada " + w.n).join(" y ")}`]);
     renderProcs(m);
     renderCycle(m);
+    renderQuality(m.quality);
     $("#ds-alerts").innerHTML = al.length ? al.map(([k, msg]) => `<li class="is-${k}">${msg}</li>`).join("") : `<li class="is-ok">Turno según el plan, sin incidencias</li>`;
   }
 
@@ -102,7 +106,7 @@
   }
 
   const STATUS = { truck: "En el camión", transit: "En movimiento", staging: "En la zona de carros", moving: "Carro de camino a inducción", induct: "Esperando inducción", aisle: "En el conveyor, esperando stow",
-    bag: "En la saca", cart: "En el carro de pick", van: "Cargado en furgoneta", route: "En reparto", delivered: "Entregado" };
+    bag: "En la saca", ps: "En problem solve", writtenoff: "Dado de baja", cart: "En el carro de pick", van: "Cargado en furgoneta", route: "En reparto", delivered: "Entregado" };
 
   function staffCtl(key) {
     return `<div class="ds-staff"><span>Personal</span><button data-staff="${key}" data-d="-1" aria-label="Quitar persona">−</button><b>${S.staff[key]}</b><button data-staff="${key}" data-d="1" aria-label="Añadir persona">+</button></div>`;
@@ -123,8 +127,9 @@
     if (s.kind === "pkg") {
       const p = S.pkgs.get(s.id); if (!p) { S.selected = null; return renderDetail(); }
       const r = S.routes[p.route - 1];
+      const ISSUE = { damaged: "Dañado", noLabel: "Etiqueta ilegible", missort: "Mal clasificado" };
       el.innerHTML = head("PKG", p.id) +
-        stats([["Estado", STATUS[p.where] || p.where], ["Grupo", R.groups[p.group].id], ["Ruta", p.sorted ? `${r.code} · ${r.town}` : "Pendiente de inducción"], ["CP destino", p.cp], ["Tamaño", `${p.size} · ${p.weight} kg`]]) +
+        stats([["Estado", STATUS[p.where] || p.where], ...(p.issue ? [["Incidencia", `<span class="is-warn">${ISSUE[p.issue]}</span>`]] : []), ["Grupo", R.groups[p.group].id], ["Ruta", p.sorted ? `${r.code} · ${r.town}` : "Pendiente de inducción"], ["CP destino", p.cp], ["Tamaño", `${p.size} · ${p.weight} kg`]]) +
         `<ol class="ds-timeline">${p.hist.slice().reverse().map((h) => `<li><time>${clock(h.t)}</time>${esc(h.msg)}</li>`).join("")}</ol>`;
     } else if (s.kind === "lane") {
       const l = S.lanes[s.id], waiting = l.closed.reduce((t, c) => t + c.items.length, 0);
@@ -146,7 +151,7 @@
       const t = S.trucks.find((x) => x.id === s.id); if (!t) { S.selected = null; return renderDetail(); }
       const pt = S.plan.trucks.find((x) => x.id === t.id);
       el.innerHTML = head("IN", `Camión ${t.id}`) + `<p>Tráiler que llega desde un centro de distribución, en el muelle ${t.dock + 1}.</p>` +
-        stats([["Estado", { arriving: "Atracando", unloading: "Descargando", leaving: "Saliendo" }[t.state]], ["Llegada prevista", pt ? clock(pt.at) : "Extra, fuera del plan"], ["Quedan", `${t.units}/${t.total}`], ["Ritmo", D.unloadRate + " paq/h"]]);
+        stats([["Estado", { arriving: "Atracando", unloading: "Descargando", leaving: "Saliendo" }[t.state]], ["Llegada prevista", pt ? clock(pt.at) + (pt.eta !== pt.at ? ` · llegó ${clock(pt.dockedAt ?? pt.eta)}` : "") : "Extra, fuera del plan"], ["Quedan", `${t.units}/${t.total}`], ["Ritmo", D.unloadRate + " paq/h"]]);
     } else if (s.kind === "van") {
       const v = S.vans.find((x) => x.id === s.id); if (!v) { S.selected = null; return renderDetail(); }
       const r = S.routes[v.route - 1];
@@ -157,13 +162,17 @@
       el.innerHTML = head("CNV", "Conveyor") + `<p>Lleva cada paquete desde inducción hasta la boca del pasillo de su ruta.</p>` +
         stats([["En la cinta", S.transit.filter((t) => t.belt).length]]);
     } else {
-      const cfg = { receive: R, induct: I, pick: P, yard: Y }[s.id];
+      const cfg = { receive: R, induct: I, pick: P, yard: Y, problem: L.problem }[s.id];
       let rows;
       if (s.id === "receive") rows = [["Paquetes en carros", E.stagingCount()], ["Carros esperando", S.lanes.reduce((t, l) => t + l.closed.length, 0)], ["Carros en camino", S.moves.length]];
       if (s.id === "induct") rows = [["En cola", S.inductQ.length], ["Capacidad", Math.round(E.rate(I.rate, "induct", I)) + " paq/h"]];
       if (s.id === "pick") rows = [["Por recoger", S.routes.reduce((t, r) => t + E.toPick(r), 0)], ["Rutas en pick", S.routes.filter((r) => E.toPick(r) || r.cart.length).length], ["Capacidad", Math.round(E.rate(P.rate, "pick", P)) + " paq/h"]];
+      if (s.id === "problem") {
+        const q = E.metrics().quality;
+        rows = [["Por resolver", q.psOpen], ["Resolución media", q.psAvg == null ? "—" : fmtMin(q.psAvg)], ["Dados de baja", q.writtenOff], ["Capacidad", Math.round(E.rate(L.problem.uph * S.staff.ps, "ps", L.problem)) + " paq/h"]];
+      }
       if (s.id === "yard") rows = [["Furgonetas", `${S.vans.length}/${Y.pads}`], ["Tiempo medio en yard", S.vanTimes.length ? fmtMin(avg(S.vanTimes)) : "—"], ["Salidas", S.routesOut]];
-      el.innerHTML = head(cfg.code, cfg.name) + `<p>${cfg.desc}</p>` + stats(rows) + (s.id !== "yard" ? staffCtl(s.id) : "");
+      el.innerHTML = head(cfg.code, cfg.name) + `<p>${cfg.desc}</p>` + stats(rows) + (s.id !== "yard" ? staffCtl(s.id === "problem" ? "ps" : s.id) : "");
     }
   }
 
@@ -181,7 +190,7 @@
   // ── Procesos y planificador de plantilla ──────────────
   // draft: reparto de personas que se está probando antes de aplicarlo
   let draft = null;
-  const QUEUE = { receive: () => E.stagingCount(), induct: () => S.inductQ.length, stow: () => S.aisles.reduce((s, a) => s + a.queue.length, 0), pick: () => S.routes.reduce((s, r) => s + E.toPick(r), 0) };
+  const QUEUE = { receive: () => E.stagingCount(), induct: () => S.inductQ.length, stow: () => S.aisles.reduce((s, a) => s + a.queue.length, 0), pick: () => S.routes.reduce((s, r) => s + E.toPick(r), 0), ps: () => S.psQ.length };
   // Semáforo: solo cuenta cuando el proceso tiene trabajo (si está parado por falta de paquetes no es culpa suya)
   function procStatus(p) {
     if (!QUEUE[p.key]() || p.rate < 1) return "idle";
@@ -241,6 +250,20 @@
       <ul>${m.cycle.map((c) => `<li><i class="ds-dot" style="background:var(${CYCLE[c.key][1]})"></i>${CYCLE[c.key][0]}<b>${c.min == null ? "—" : fmtMin(c.min)}</b></li>`).join("")}</ul>`;
   }
 
+  // ── Calidad ───────────────────────────────────────────
+  function renderQuality(q) {
+    const pct = (v) => (v * 100).toFixed(2).replace(".", ",") + "%";
+    const rows = [
+      ["Missort", `<b class="${q.missortRate > 0.006 ? "is-warn" : ""}">${pct(q.missortRate)}</b>`],
+      ["DPMO", `<b>${num(Math.round(q.dpmo))}</b>`],
+      ["PS abiertos", `<b class="${q.psOpen > 25 ? "is-warn" : ""}">${q.psOpen}</b>`],
+      ["Resolución media", `<b>${q.psAvg == null ? "—" : fmtMin(q.psAvg)}</b>`],
+      ["Dañados", `<b>${q.damaged}</b>`], ["Sin etiqueta", `<b>${q.noLabel}</b>`],
+      ["Mal clasificados", `<b>${q.missort}</b>`], ["Dados de baja", `<b>${q.writtenOff}</b>`],
+    ];
+    $("#ds-quality").innerHTML = rows.map(([k, v]) => `<li>${k}${v}</li>`).join("");
+  }
+
   // ── Ritmo por hora ────────────────────────────────────
   function drawHourly() {
     const hours = Math.ceil((S.plan.end + 15) / 60), bars = [];
@@ -292,8 +315,15 @@
     }
     // camiones
     for (const pt of S.plan.trucks) {
+      const tri = (x) => { ctx.beginPath(); ctx.moveTo(X(x), by - 3); ctx.lineTo(X(x) - 3, by - 9); ctx.lineTo(X(x) + 3, by - 9); ctx.closePath(); ctx.fill(); };
+      if (pt.eta !== pt.at) {
+        // retraso: hueco entre la hora del plan y la real
+        ctx.fillStyle = C.bad; ctx.fillRect(X(pt.at), by - 7, X(pt.eta) - X(pt.at), 2);
+        ctx.globalAlpha = 0.4; tri(pt.at); ctx.globalAlpha = 1;
+        tri(pt.eta); continue;
+      }
       ctx.fillStyle = pt.state === "pending" ? (S.t >= pt.at ? C.warn : C.muted) : C.raw;
-      ctx.beginPath(); ctx.moveTo(X(pt.at), by - 3); ctx.lineTo(X(pt.at) - 3, by - 9); ctx.lineTo(X(pt.at) + 3, by - 9); ctx.closePath(); ctx.fill();
+      tri(pt.at);
     }
     // corte del sort
     ctx.fillStyle = C.bad; ctx.fillRect(X(S.plan.cutoff) - 1, by - 12, 2, 24);
@@ -365,6 +395,8 @@
 
   // ── Bucle ─────────────────────────────────────────────
   boot();
+  // acceso desde la consola del navegador (y para las capturas automáticas)
+  window.__ds = () => E;
   let last = performance.now(), uiAcc = 0, mapVisible = true;
   // si el mapa no está en pantalla (p. ej. leyendo el panel en el móvil), la simulación sigue pero no se dibuja
   if ("IntersectionObserver" in window) new IntersectionObserver((es) => { mapVisible = es[0].isIntersecting; }).observe(canvas);

@@ -4,7 +4,7 @@
 
   function create(E, canvas) {
     const S = E.S, L = E.L, posOf = E.posOf, rate = E.rate, stagingCount = E.stagingCount, laneOf = E.laneOf;
-    const D = L.docks, R = L.receive, I = L.induct, CV = L.conveyor, ST = L.stow, P = L.pick, Y = L.yard;
+    const D = L.docks, R = L.receive, I = L.induct, CV = L.conveyor, ST = L.stow, P = L.pick, Y = L.yard, PS = L.problem;
     const { dockX, beltY, bagRect, bagCenter, cartRect, cartCenter, padRect, padCenter, laneRect, laneCenter, center } = E.geo;
     const AISLE_COLORS = ["--ds-a", "--ds-b", "--ds-c", "--ds-d"];
     const ctx = canvas.getContext("2d");
@@ -260,6 +260,15 @@
       }
     }
 
+    function drawProblem() {
+      const n = S.psQ.length;
+      zoneBox(PS, "problem", n / (rate(PS.uph * PS.staff, "ps", PS) / 60));
+      ctx.textBaseline = "top";
+      text(String(n), PS.x + 10, PS.y + 50, MONO(600, 20), n ? C.bad : C.fg);
+      text("por resolver", PS.x + 10, PS.y + 74, SANS(500, 10), C.muted);
+      queueDots(PS.x + 10, PS.y + 90, PS.w - 20, n, C.bad, Math.floor((PS.w - 20) / 7) * 2);
+    }
+
     function drawYard() {
       ctx.save(); ctx.setLineDash([6, 6]); ctx.strokeStyle = isSel("zone", "yard") ? C.sel : C.line; ctx.lineWidth = isSel("zone", "yard") ? 2.5 : 1.5;
       rr(Y.x, Y.y, Y.w, Y.h, 12); ctx.stroke(); ctx.restore();
@@ -313,7 +322,7 @@
     function drawTransit(time) {
       for (const tr of S.transit) {
         const p = posOf(tr), pkg = tr.pkg;
-        const col = pkg.sorted ? C.aisle[S.routes[pkg.route - 1].aisle] : C.raw;
+        const col = pkg.issue && (tr.dest === "ps" || pkg.where === "ps") ? C.bad : pkg.sorted ? C.aisle[S.routes[pkg.route - 1].aisle] : C.raw;
         // cajita de cartón que se balancea, con la cinta del color de su pasillo
         const seed = pkg.seed || (pkg.seed = Math.random() * 6.28);
         const big = pkg.size === "Oversize" ? 1.35 : pkg.size === "Sobre" ? 0.8 : 1;
@@ -360,6 +369,7 @@
         case "staging": { const l = laneOf(p); return l ? laneCenter(l) : center(R); }
         case "moving": { const m = S.moves.find((x) => x.cart.items.includes(p)); return m ? movePos(m) : center(I); }
         case "induct": return center(I);
+        case "ps": return center(PS);
         case "aisle": return { x: ST.x + 14, y: beltY(ST.aisles[r.aisle]) };
         case "bag": return bagCenter(r);
         case "cart": return cartCenter(r);
@@ -376,11 +386,18 @@
       drawDocks(); drawBelts(time);
       drawStaging();
       drawQueueZone(I, "induct", S.inductQ, I);
-      drawAisles(); drawPick(); drawYard();
+      drawAisles(); drawPick(); drawProblem(); drawYard();
       for (const t of S.trucks) drawTruck(t);
       drawMoves();
       drawTransit(time);
       drawFx(time);
+      // aviso encima de los paquetes para que se lea siempre
+      if (S.conveyorDown) {
+        const y = (CV.top + CV.bottom) / 2;
+        ctx.textBaseline = "middle";
+        ctx.fillStyle = C.bad; rr(CV.x - 32, y - 10, 64, 20, 10); ctx.fill();
+        text("PARADO", CV.x, y + 1, MONO(700, 10), C.floor, "center");
+      }
       const tp = trackedPos();
       if (tp) {
         // ondas que salen del paquete rastreado
@@ -405,7 +422,7 @@
       for (const r of S.routes) if ((r.van || r.cart.length) && inside(x, y, cartRect(r))) return { kind: "route", id: r.n };
       for (const a of ST.aisles) if (inside(x, y, { x: ST.x, y: a.y, w: ST.w, h: ST.h })) return { kind: "aisle", id: a.id };
       for (let i = 0; i < S.lanes.length; i++) if (inside(x, y, laneRect(S.lanes[i]))) return { kind: "lane", id: i };
-      const zones = { receive: R, induct: I, pick: P, yard: Y };
+      const zones = { receive: R, induct: I, pick: P, problem: PS, yard: Y };
       for (const k in zones) if (inside(x, y, zones[k])) return { kind: "zone", id: k };
       if (Math.abs(x - CV.x) < 12 && y > CV.top && y < CV.bottom) return { kind: "zone", id: "conveyor" };
       return null;

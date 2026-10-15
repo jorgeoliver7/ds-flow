@@ -72,6 +72,24 @@ const DS_LAYOUT = {
     desc: "Antes de cada oleada, los pickers sacan las sacas de sus rutas, las montan en un carro por ruta y las dejan listas para la furgoneta.",
   },
 
+  // Problem solve: paquetes con incidencias (dañados, sin etiqueta legible o mal clasificados)
+  problem: {
+    name: "Problem solve", code: "PS",
+    x: 806, y: 124, w: 104, h: 112,
+    staff: 2,
+    uph: 30,                             // resoluciones por hora y persona
+    handleMin: 6,                        // minutos mínimos que pasa un paquete en revisión
+    desc: "Aquí acaban los paquetes con incidencias: dañados, sin etiqueta legible o mal clasificados. Se revisan y vuelven al flujo, o se dan de baja si no tienen arreglo.",
+  },
+
+  // Calidad: probabilidad de cada incidencia por paquete
+  quality: {
+    damaged: 0.0015,       // llega dañado del camión
+    noLabel: 0.003,        // la etiqueta no se lee en inducción
+    missort: 0.004,        // el stower lo mete en la saca de al lado
+    writeOff: 0.3,         // de los dañados, los que no tienen arreglo
+  },
+
   yard: {
     name: "Yard", code: "YRD",
     x: 940, y: 16, w: 290, h: 708,
@@ -93,6 +111,10 @@ const DS_LAYOUT = {
     pickLead: 75,          // minutos antes de su oleada en que empieza el pick de una ruta
     loadWindow: 25,        // minutos desde la hora de la oleada para cargar y salir a tiempo
     maxWait: 20,           // pasado el límite, la furgoneta espera como mucho esto y sale con lo que tenga
+    // incidencias programadas (para que la demo salga siempre igual)
+    events: [
+      { type: "conveyor", at: "01:20", minutes: 8 },
+    ],
     waves: [
       { at: "06:30", aisles: ["A"] },
       { at: "07:00", aisles: ["B"] },
