@@ -1,0 +1,41 @@
+# Plantilla de ejemplo para importar una noche en DS Flow. Datos inventados.
+# tipo: camion (hora de llegada y paquetes), ruta (paquetes de la ruta R01-R24),
+# corte (hora límite del sort) y oleada (hora de salida de un pasillo A, B o C).
+# El archivo solo se lee en tu navegador: no se sube a ningún sitio.
+tipo;id;hora;paquetes
+camion;T-01;23:00;700
+camion;T-02;23:30;900
+camion;T-03;00:00;950
+camion;T-04;00:30;1000
+camion;T-05;01:15;1100
+camion;T-06;02:00;800
+camion;T-07;02:40;750
+camion;T-08;03:30;600
+corte;;05:30;
+oleada;A;06:20;
+oleada;B;06:50;
+oleada;C;07:20;
+ruta;R01;;420
+ruta;R02;;380
+ruta;R03;;510
+ruta;R04;;260
+ruta;R05;;300
+ruta;R06;;350
+ruta;R07;;290
+ruta;R08;;240
+ruta;R09;;330
+ruta;R10;;410
+ruta;R11;;280
+ruta;R12;;300
+ruta;R13;;350
+ruta;R14;;220
+ruta;R15;;270
+ruta;R16;;310
+ruta;R17;;390
+ruta;R18;;260
+ruta;R19;;300
+ruta;R20;;450
+ruta;R21;;230
+ruta;R22;;180
+ruta;R23;;0
+ruta;R24;;250

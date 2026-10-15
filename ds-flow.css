@@ -344,6 +344,10 @@ button, select, input { font: inherit; color: inherit; }
 
 /* ── Escenario e informe ──────────────────────────── */
 .ds-scenario-bar { padding-bottom: 10px; border-bottom: 1px solid var(--ds-line); }
+.ds-file { position: relative; overflow: hidden; }
+.ds-file input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.ds-file:focus-within { outline: 2px solid var(--ds-accent); outline-offset: 2px; }
+.ds-link { font-size: 12px; color: var(--ds-fg-soft); }
 .ds-scenario-desc { flex: 1 1 260px; margin: 0; font-size: 12px; color: var(--ds-fg-soft); }
 .ds-report {
   width: min(980px, calc(100vw - 32px)); max-height: calc(100vh - 48px);

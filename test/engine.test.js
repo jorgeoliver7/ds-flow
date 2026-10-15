@@ -145,3 +145,31 @@ test("cada escenario lleva a un informe distinto y coherente", () => {
   const signature = (x) => JSON.stringify([x.r.kpis, x.r.bad]);
   assert.equal(new Set(Object.values(out).map(signature)).size, SC.list.length);
 });
+
+test("importar la plantilla CSV cambia la partida", () => {
+  const fs = require("node:fs"), path = require("node:path");
+  const I = require("../importcsv.js");
+  const res = I.parse(fs.readFileSync(path.join(__dirname, "..", "ejemplo-turno.csv"), "utf8"), L);
+  assert.ok(res.ok, res.errors.join(", "));
+  assert.equal(res.shift.trucks.length, 8);
+  assert.equal(res.shift.trucks[0].at, "23:00");
+  assert.equal(res.shift.waves[0].at, "06:20");
+  assert.equal(res.weights.length, 24);
+  const E = DSEngine.create(L, { seed: 7, shift: res.shift, routeWeights: res.weights });
+  run(E, 760);
+  assert.equal(E.S.received, 6800);
+  assert.equal(E.S.routes[22].out, 0, "la ruta sin volumen no recibe paquetes");
+  assert.ok(E.S.routes[2].out > E.S.routes[21].out, "R03 lleva más que R22");
+  assert.ok(E.S.over);
+});
+
+test("el CSV con errores se rechaza con mensajes claros", () => {
+  const I = require("../importcsv.js");
+  const bad = I.parse("tipo;id;hora;paquetes\ncamion;T-01;25:00;100\nruta;R99;;10\nfurgo;;;\n", L);
+  assert.equal(bad.ok, false);
+  assert.equal(bad.errors.length, 4);
+  assert.ok(bad.errors[0].includes("Línea 2"));
+  assert.equal(I.parse("", L).ok, false);
+  const comma = I.parse("tipo,id,hora,paquetes\ncamion,T-01,23:10,1.200\n", L);
+  assert.ok(comma.ok); assert.equal(comma.shift.trucks[0].units, 1200);
+});

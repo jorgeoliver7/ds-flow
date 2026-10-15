@@ -1,0 +1,4 @@
+# Datos reales de una noche: se importan en el navegador y nunca se suben al repo
+*.csv
+!ejemplo-turno.csv
+node_modules/

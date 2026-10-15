@@ -19,12 +19,17 @@
   const SCN = DSScenarios.list;
   let scenarioId = new URLSearchParams(location.search).get("escenario");
   if (!SCN.some((s) => s.id === scenarioId)) scenarioId = SCN[0].id;
-  const scenario = () => SCN.find((s) => s.id === scenarioId);
+  // noche importada desde un CSV: vive solo en esta pestaña
+  let custom = null;
+  const scenario = () => (scenarioId === "importado" && custom) || SCN.find((s) => s.id === scenarioId);
+  const scenarioOptions = () => (scenarioId === "importado" && custom
+    ? { seed: custom.seed, shift: custom.shift, routeWeights: custom.weights, staff: {} }
+    : DSScenarios.options(L, scenarioId));
 
   function boot() {
     ready = false;
     const prev = S;
-    E = DSEngine.create(L, Object.assign(DSScenarios.options(L, scenarioId), {
+    E = DSEngine.create(L, Object.assign(scenarioOptions(), {
       hooks: { log: () => ready && renderLog(), fx: (k, d) => V && V.onFx(k, d), now: () => performance.now() / 1000 },
     }));
     S = E.S;
@@ -39,6 +44,24 @@
     ready = true;
     renderDetail(); renderLog(); renderKpis();
   }
+
+  // ── Importar una noche desde CSV ──────────────────────
+  $("#ds-import").addEventListener("change", (e) => {
+    const file = e.target.files[0]; e.target.value = "";
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const res = DSImport.parse(reader.result, L);
+      if (!res.ok) { toast(res.errors.slice(0, 2).join(" · ")); return; }
+      custom = { id: "importado", name: "Noche importada", seed: 7, shift: res.shift, weights: res.weights,
+        desc: `${file.name}: ${res.summary}. El archivo solo está en tu navegador.` };
+      if (!scSel.querySelector('[value="importado"]')) scSel.insertAdjacentHTML("beforeend", '<option value="importado">Noche importada</option>');
+      scenarioId = scSel.value = "importado";
+      history.replaceState(null, "", location.pathname);
+      boot(); toast("Noche importada: " + res.summary);
+    };
+    reader.readAsText(file);
+  });
 
   // ── Informe de fin de turno ───────────────────────────
   const reportEl = $("#ds-report");
@@ -68,6 +91,7 @@
   scSel.value = scenarioId;
   scSel.addEventListener("change", () => {
     scenarioId = scSel.value;
+    if (scenarioId === "importado") { boot(); return; }
     const url = new URL(location.href);
     if (scenarioId === SCN[0].id) url.searchParams.delete("escenario"); else url.searchParams.set("escenario", scenarioId);
     history.replaceState(null, "", url);

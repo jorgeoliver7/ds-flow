@@ -76,7 +76,7 @@
   const avg = (a) => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : 0);
   const trim = (a, n) => { if (a.length > n) a.splice(0, a.length - n); };
 
-  // opts: { seed, shift (sustituye a L.shift), staff (plantilla inicial), hooks: { log(msg, kind), fx(kind, data), now() } }
+  // opts: { seed, shift (sustituye a L.shift), staff (plantilla inicial), routeWeights (volumen por ruta), hooks: { log(msg, kind), fx(kind, data), now() } }
   function create(L, opts) {
     opts = opts || {};
     const hooks = Object.assign({ log() {}, fx() {}, now: () => 0 }, opts.hooks);
@@ -120,13 +120,14 @@
         S.routes.push({
           n, code: "R" + String(n).padStart(2, "0"), aisle: a.idx, j,
           town: L.towns[(n * 3) % L.towns.length],
-          weight: 0.5 + rand() * 1.2,
+          weight: 0.5 + rand() * 1.2,  // peso de volumen; un CSV importado lo sustituye por el volumen real
           bag: [], cart: [], van: null, out: 0,
           upstream: 0,          // paquetes de la ruta que aún no han llegado a su saca
           picking: false, dispatched: false, departAt: null, late: false, wave: null,
         });
       }
     });
+    if (opts.routeWeights) S.routes.forEach((r, i) => (r.weight = opts.routeWeights[i] || 0));
     const totalWeight = () => S.routes.reduce((s, r) => s + r.weight, 0);
 
     // Plan del turno: camiones programados y oleadas de salida

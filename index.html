@@ -40,6 +40,8 @@
       <div class="ds-controls ds-scenario-bar">
         <label class="ds-field">Escenario <select id="ds-scenario"></select></label>
         <p class="ds-scenario-desc" id="ds-scenario-desc"></p>
+        <label class="ds-btn ds-btn--ghost ds-file" title="Simula una noche concreta. El archivo se lee en tu navegador y no se sube a ningún sitio.">Importar CSV<input type="file" id="ds-import" accept=".csv,text/csv"></label>
+        <a class="ds-link" href="ejemplo-turno.csv" download>Plantilla</a>
         <button class="ds-btn" id="ds-report-btn">Informe del turno</button>
       </div>
 
@@ -164,6 +166,7 @@
   <script src="engine.js"></script>
   <script src="scenarios.js"></script>
   <script src="report.js"></script>
+  <script src="importcsv.js"></script>
   <script src="charts.js"></script>
   <script src="render.js"></script>
   <script src="ui.js"></script>
