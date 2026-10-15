@@ -21,7 +21,7 @@
     const procs = Object.keys(PROCS).map((k) => {
       const hours = (S.procMin[k] || 0) / 60, units = S.totals[k] || 0, uph = hours > 0.2 ? units / hours : null;
       // problem solve depende de cuántas incidencias haya, así que no se compara con su objetivo
-      return { key: k, name: PROCS[k], staff: S.staff[k], units, hours, uph, target: cfg[k].uph, ratio: uph && k !== "ps" ? uph / cfg[k].uph : null };
+      return { key: k, name: PROCS[k], staff: S.staff[k], need: S.crewPlan ? S.crewPlan.staff[k] : null, units, hours, uph, target: cfg[k].uph, ratio: uph && k !== "ps" ? uph / cfg[k].uph : null };
     });
     const waves = m.waves.map((w) => {
       const pw = S.plan.waves.find((x) => x.n === w.n);
@@ -57,7 +57,7 @@
     }
     if (!m.routesLate && m.routesOut === m.routesTotal) good.push(`Las ${m.routesTotal} rutas salieron dentro de su ventana.`);
     for (const w of waves) if (w.late) bad.push(`Oleada ${w.n}: ${w.late} de ${w.routes} rutas salieron tarde (última a las ${clock(w.depart)}, límite ${clock(w.deadline)}).`);
-    if (m.rollover) bad.push(`${m.rollover} paquetes se quedan en la estación para mañana (rollover).`);
+    if (m.rollover) bad.push(`${m.rollover} paquete${m.rollover > 1 ? "s se quedan" : " se queda"} en la estación para mañana (rollover).`);
     else if (m.routesOut) good.push("Sin rollover: no se queda ningún paquete en la estación.");
     const byRatio = procs.filter((p) => p.ratio != null);
     for (const p of byRatio) if (p.ratio >= 0.95) good.push(`${p.name} trabajó al ${pct(p.ratio)} de su objetivo (${Math.round(p.uph)} de ${p.target} UPH).`);
@@ -67,6 +67,17 @@
     if (q.missortRate <= 0.005) good.push(`Missort del ${pct(q.missortRate, 2)}, dentro del 0,5% objetivo.`);
     else bad.push(`Missort del ${pct(q.missortRate, 2)}, por encima del 0,5% objetivo.`);
     if (q.writtenOff) bad.push(`${q.writtenOff} paquete${q.writtenOff > 1 ? "s dañados se dieron" : " dañado se dio"} de baja.`);
+    // plantilla con la que empezó el turno frente a la mínima calculada para ese volumen
+    const cp = S.crewPlan, s0 = S.staff0 || S.staff, SORT = ["receive", "induct", "stow", "ps"];
+    if (cp) {
+      const had = SORT.reduce((t, k) => t + s0[k], 0), dSort = had - cp.sort, dPick = s0.pick - cp.pick;
+      if (dSort >= 2) bad.push(`Sobraban unas ${dSort} personas en el sort: con ${cp.sort} (inducción ${cp.staff.induct}, stow ${cp.staff.stow}) se llegaba al corte con margen.`);
+      else if (dSort < 0) bad.push(`Faltaban ${-dSort} persona${dSort < -1 ? "s" : ""} en el sort: para este volumen hacían falta ${cp.sort} y se empezó con ${had}.`);
+      else good.push(`La plantilla del sort (${had}) se ajustaba al volumen: la mínima para llegar al corte era ${cp.sort}.`);
+      const pers = (n) => `${n} persona${n === 1 ? "" : "s"}`;
+      if (dPick >= 2) bad.push(`En pick bastaba${cp.pick === 1 ? "" : "n"} ${pers(cp.pick)} y había ${s0.pick}.`);
+      else if (dPick < 0) bad.push(`En pick hacían falta ${pers(cp.pick)} y había ${s0.pick}.`);
+    }
     for (const ev of S.plan.events) {
       if (ev.type === "conveyor" && ev.state !== "pending") bad.push(`El conveyor estuvo parado ${ev.minutes} min desde las ${clock(ev.at)}.`);
     }
@@ -81,7 +92,7 @@
     const rows = [["Sección", "Métrica", "Valor", "Detalle"]];
     rows.push(["Turno", "Escenario", r.scenario, r.seed == null ? "" : "semilla " + r.seed]);
     for (const [k, v, sub] of r.kpis) rows.push(["KPI", k, v, sub || ""]);
-    for (const p of r.procs) rows.push(["Proceso", p.name, p.uph == null ? "" : Math.round(p.uph), `objetivo ${p.target} UPH · ${p.staff} personas · ${p.units} paquetes`]);
+    for (const p of r.procs) rows.push(["Proceso", p.name, p.uph == null ? "" : Math.round(p.uph), `objetivo ${p.target} UPH · ${p.staff} personas (mínimo ${p.need == null ? "—" : p.need}) · ${p.units} paquetes`]);
     for (const w of r.waves) rows.push(["Oleada", "O" + w.n, r.clock(w.depart), `límite ${r.clock(w.deadline)} · ${w.late} de ${w.routes} rutas tarde`]);
     for (const c of r.cycle) rows.push(["Tiempo de ciclo", c.name, c.min == null ? "" : dec(c.min), "minutos"]);
     for (const g of r.good) rows.push(["Bien", "", g, ""]);
@@ -92,7 +103,7 @@
 
   function html(r) {
     const k = r.kpis.map(([l, v, sub, cls]) => `<div class="ds-kpi"><span>${l}</span><strong class="${cls ? "is-" + cls : ""}">${esc(v)}</strong>${sub ? `<small>${esc(sub)}</small>` : ""}</div>`).join("");
-    const procs = r.procs.map((p) => `<tr><td>${p.name}</td><td>${p.staff}</td><td>${n0(p.units)}</td><td>${p.uph == null ? "—" : Math.round(p.uph)}</td><td>${p.target}</td>
+    const procs = r.procs.map((p) => `<tr><td>${p.name}</td><td>${p.staff}</td><td>${p.need == null ? "—" : p.need}</td><td>${n0(p.units)}</td><td>${p.uph == null ? "—" : Math.round(p.uph)}</td><td>${p.target}</td>
       <td class="${p.ratio == null ? "" : p.ratio >= 0.95 ? "is-ok" : p.ratio >= 0.85 ? "is-warn" : "is-bad"}">${p.ratio == null ? "—" : pct(p.ratio)}</td></tr>`).join("");
     const waves = r.waves.map((w) => `<tr><td>O${w.n}</td><td>${w.routes}</td><td>${r.clock(w.at)}–${r.clock(w.deadline)}</td><td class="${w.late ? "is-bad" : "is-ok"}">${r.clock(w.depart)}</td><td>${w.late}</td></tr>`).join("");
     const list = (a, empty) => (a.length ? a.map((x) => `<li>${esc(x)}</li>`).join("") : `<li class="ds-hint">${empty}</li>`);
@@ -106,7 +117,7 @@
         <section><h4>Lo que hay que mejorar</h4><ul class="ds-report-list ds-report-bad">${list(r.bad, "Nada: turno limpio")}</ul></section>
       </div>
       <div class="ds-report-cols">
-        <section class="ds-procs"><h4>Productividad del turno</h4><table><thead><tr><th>Proceso</th><th>Pers.</th><th>Paquetes</th><th>UPH</th><th>Obj.</th><th>%</th></tr></thead><tbody>${procs}</tbody></table></section>
+        <section class="ds-procs"><h4>Productividad del turno</h4><table><thead><tr><th>Proceso</th><th>Pers.</th><th title="Plantilla mínima calculada al empezar el turno">Mín.</th><th>Paquetes</th><th>UPH</th><th>Obj.</th><th>%</th></tr></thead><tbody>${procs}</tbody></table></section>
         <section class="ds-procs"><h4>Oleadas</h4><table><thead><tr><th>Oleada</th><th>Rutas</th><th>Ventana</th><th>Salida</th><th>Tarde</th></tr></thead><tbody>${waves}</tbody></table>
           <h4 style="margin-top:14px">Tiempo de ciclo</h4><ul class="ds-quality">${r.cycle.map((c) => `<li>${c.name}<b>${c.min == null ? "—" : dec(c.min) + " min"}</b></li>`).join("")}</ul></section>
       </div>`;

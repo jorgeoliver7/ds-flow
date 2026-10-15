@@ -13,8 +13,9 @@ Forma parte del [portfolio de Jorge Acedo](https://jorgeoliver7.github.io/Portfo
 1. **Elige un escenario** arriba a la izquierda: noche normal, pico, falta de personal, camión retrasado o tarde (PM), el turno de same day con unos 500 paquetes que salen a las 18:00. Cada uno tiene su semilla, así que sale igual cada vez. También se puede enlazar directamente con `?escenario=pico`.
 2. **Sube la velocidad** a 180× o 600× para ver el turno entero en unos minutos.
 3. **Sigue la barra del turno**: camiones del plan (▼), corte del sort, oleadas de salida y el rombo con la hora prevista de fin del sort, en verde si llega al corte y en rojo si no.
-4. **Prueba el planificador** en "Procesos y plantilla": mueve personas con − y + y verás la nueva hora de fin y las rutas que saldrían tarde antes de aplicar el cambio.
-5. **Al acabar se abre el informe** con lo que salió bien y lo que hay que mejorar. Se puede descargar en CSV o guardar como PDF.
+4. **Prueba el planificador** en "Procesos y plantilla": mueve personas con − y + y verás la nueva hora de fin y las rutas que saldrían tarde antes de aplicar el cambio. Debajo está la **plantilla mínima** para llegar al corte con 15 min de margen y sacar todas las oleadas; "Probar" la carga en el planificador.
+5. **Sigue las recomendaciones**: durante el turno la app avisa como lo haría un responsable de turno ("Mueve 1 de inducción a stow: el sort acabaría a las 05:52 en vez de a las 06:23"). Se aplican con un clic y quedan en la actividad.
+6. **Al acabar se abre el informe** con lo que salió bien y lo que hay que mejorar, y compara la plantilla con la que se empezó con la mínima para ese volumen. Se puede descargar en CSV o guardar como PDF.
 
 ![Informe de fin de turno con falta de personal](docs/informe.jpg)
 
@@ -26,7 +27,7 @@ Forma parte del [portfolio de Jorge Acedo](https://jorgeoliver7.github.io/Portfo
 
 | Métrica | Qué mide |
 | --- | --- |
-| Fin previsto del sort | Hora a la que quedaría todo clasificado en sacas al ritmo de la plantilla actual: los paquetes que faltan divididos entre la capacidad del proceso más lento (inducción o stow), y nunca antes de que llegue y se descargue el último camión. |
+| Fin previsto del sort | Hora a la que quedaría todo clasificado en sacas al ritmo de la plantilla actual. Simula minuto a minuto lo que queda: los camiones pendientes entran al ritmo de descarga desde su llegada y el proceso más lento (inducción o stow) va vaciando lo acumulado. |
 | Corte del sort | Hora límite para tener todo clasificado antes de empezar a cargar. |
 | Rutas a tiempo | Furgonetas que salen dentro de la ventana de su oleada. |
 | Rollover | Paquetes que siguen en la estación cuando su ruta ya ha salido: se quedan para el día siguiente. |
@@ -36,6 +37,7 @@ Forma parte del [portfolio de Jorge Acedo](https://jorgeoliver7.github.io/Portfo
 | Missort | Paquetes que acaban en una saca que no es la suya. Se detectan en pick y vuelven por problem solve. |
 | DPMO | Defectos (dañados, sin etiqueta y missorts) por millón de paquetes recibidos. |
 | Problem solve | Paquetes en revisión y su tiempo medio de resolución. Los dañados sin arreglo se dan de baja. |
+| Plantilla mínima | Personas por proceso con las que el sort acaba 15 min antes del corte y salen todas las oleadas. Se calcula con un modelo de flujo: los camiones entran al ritmo de descarga y el sort los vacía al 95% de su ritmo nominal, que es lo que rinde de media una noche. |
 | Tiempo de ciclo | Minutos medios de cada tramo: muelle → inducción → saca → pick → salida. |
 
 ![Planificador de plantilla](docs/planificador.jpg)

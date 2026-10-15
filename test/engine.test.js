@@ -180,3 +180,36 @@ test("el CSV con errores se rechaza con mensajes claros", () => {
   // por pasillo: la segunda oleada del pasillo A conserva sus 15 min de separación
   assert.deepEqual(comma.shift.waves.slice(0, 2).map((w) => w.at), ["06:00", "06:15"]);
 });
+
+test("la plantilla mínima llega al corte y saca todas las oleadas", () => {
+  const SC = require("../scenarios.js");
+  const o = SC.options(L, "normal"), cp = DSEngine.create(L, o).S.crewPlan;
+  assert.ok(cp.reachable);
+  assert.ok(cp.sort >= 20 && cp.sort <= 28, `sort ${cp.sort}`);
+  const E = DSEngine.create(L, { ...o, staff: cp.staff });
+  run(E, 900);
+  assert.ok(E.S.sortDoneAt <= E.S.plan.cutoff, "acaba antes del corte");
+  assert.equal(E.metrics().routesLate, 0);
+  // con dos personas menos en stow acaba bastante más tarde
+  const E2 = DSEngine.create(L, { ...o, staff: { ...cp.staff, stow: cp.staff.stow - 2 } });
+  run(E2, 900);
+  assert.ok(E2.S.sortDoneAt > E.S.sortDoneAt + 20);
+});
+
+test("la recomendación en directo mueve gente al cuello de botella y adelanta el sort", () => {
+  const SC = require("../scenarios.js");
+  const o = SC.options(L, "personal");
+  const E = DSEngine.create(L, o);
+  while (E.S.t < 30) E.step(0.1);
+  const adv = E.advise();
+  assert.ok(adv, "hay recomendación");
+  assert.equal(adv.id, "move:induct:stow");
+  assert.ok(adv.staff.stow > E.S.staff.stow);
+  const before = E.forecast().sortEnd;
+  Object.assign(E.S.staff, adv.staff);
+  assert.ok(E.forecast().sortEnd < before - 5);
+  // con la estación sobrada no recomienda nada
+  const N = DSEngine.create(L, SC.options(L, "normal"));
+  while (N.S.t < 30) N.step(0.1);
+  assert.equal(N.advise(), null);
+});
