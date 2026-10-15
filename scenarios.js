@@ -21,9 +21,9 @@
     },
     {
       id: "personal", name: "Falta de personal", seed: 33,
-      desc: "Tres bajas en stow y tres en pick. Prueba a mover gente con el planificador.",
+      desc: "Cuatro bajas en stow y cuatro en pick. Prueba a mover gente con el planificador.",
       shift: (sh) => sh,
-      staff: (L) => ({ stow: L.stow.staff - 3, pick: L.pick.staff - 3 }),
+      staff: (L) => ({ stow: L.stow.staff - 4, pick: L.pick.staff - 4 }),
     },
     {
       id: "retraso", name: "Camión retrasado", seed: 45,
@@ -33,12 +33,29 @@
         return sh;
       },
     },
+    {
+      id: "pm", name: "Tarde (PM, same day)", seed: 58,
+      desc: "Turno de tarde: unos 500 paquetes de same day en 8 rutas que salen a las 18:00, con un equipo pequeño.",
+      shift: (sh) => ({
+        ...sh, start: "14:00",
+        trucks: [{ at: "14:30", units: 300 }, { at: "15:30", units: 200 }],
+        sortCutoff: "16:45", events: [],
+        waves: [{ at: "18:00", aisles: ["A"] }],
+      }),
+      staff: () => ({ receive: 1, induct: 1, stow: 3, pick: 3, ps: 1 }),
+      // solo salen las 8 rutas del pasillo A; el resto no tiene volumen por la tarde
+      routes: [1.2, 0.8, 1, 1.4, 0.6, 1.1, 0.9, 1],
+    },
   ];
 
   // Opciones para DSEngine.create a partir de un escenario
   function options(L, id) {
     const sc = SCENARIOS.find((s) => s.id === id) || SCENARIOS[0];
-    return { seed: sc.seed, shift: sc.shift(clone(L.shift)), staff: sc.staff ? sc.staff(L) : {} };
+    const n = L.stow.aisles.length * L.stow.routesPerAisle;
+    return {
+      seed: sc.seed, shift: sc.shift(clone(L.shift)), staff: sc.staff ? sc.staff(L) : {},
+      routeWeights: sc.routes ? Array.from({ length: n }, (_, i) => sc.routes[i] || 0) : undefined,
+    };
   }
 
   const api = { list: SCENARIOS, options };

@@ -142,6 +142,11 @@ test("cada escenario lleva a un informe distinto y coherente", () => {
   assert.ok(out.personal.S.sortDoneAt > out.personal.S.plan.cutoff);
   assert.ok(out.personal.r.bad.some((b) => b.includes("después del corte")));
   assert.ok(out.retraso.r.bad.some((b) => b.includes("T-10 llegó 90 min tarde")));
+  // turno de tarde: poco volumen, otra hora de inicio y solo las rutas con paquetes
+  assert.equal(out.pm.S.plan.volume, 500);
+  assert.equal(DSEngine.clock({ shiftStart: 14 * 60 }, 0), "14:00");
+  assert.equal(out.pm.r.kpis.find((k) => k[0] === "Rutas a tiempo")[1], "8/8");
+  assert.ok(out.pm.S.sortDoneAt <= out.pm.S.plan.cutoff);
   const signature = (x) => JSON.stringify([x.r.kpis, x.r.bad]);
   assert.equal(new Set(Object.values(out).map(signature)).size, SC.list.length);
 });

@@ -10,7 +10,7 @@ Forma parte del [portfolio de Jorge Acedo](https://jorgeoliver7.github.io/Portfo
 
 ## Cómo contar un turno con la app
 
-1. **Elige un escenario** arriba a la izquierda: noche normal, pico, falta de personal o camión retrasado. Cada uno tiene su semilla, así que sale igual cada vez. También se puede enlazar directamente con `?escenario=pico`.
+1. **Elige un escenario** arriba a la izquierda: noche normal, pico, falta de personal, camión retrasado o tarde (PM), el turno de same day con unos 500 paquetes que salen a las 18:00. Cada uno tiene su semilla, así que sale igual cada vez. También se puede enlazar directamente con `?escenario=pico`.
 2. **Sube la velocidad** a 180× o 600× para ver el turno entero en unos minutos.
 3. **Sigue la barra del turno**: camiones del plan (▼), corte del sort, oleadas de salida y el rombo con la hora prevista de fin del sort, en verde si llega al corte y en rojo si no.
 4. **Prueba el planificador** en "Procesos y plantilla": mueve personas con − y + y verás la nueva hora de fin y las rutas que saldrían tarde antes de aplicar el cambio.

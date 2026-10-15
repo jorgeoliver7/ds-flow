@@ -79,11 +79,14 @@
   // opts: { seed, shift (sustituye a L.shift), staff (plantilla inicial), routeWeights (volumen por ruta), hooks: { log(msg, kind), fx(kind, data), now() } }
   function create(L, opts) {
     opts = opts || {};
+    // un turno puede empezar a otra hora (p. ej. el de tarde): el reloj de toda la partida se mueve con él
+    const SH = opts.shift || L.shift;
+    if (SH.start) { const [h, m] = SH.start.split(":").map(Number); L = { ...L, shiftStart: h * 60 + m }; }
     const hooks = Object.assign({ log() {}, fx() {}, now: () => 0 }, opts.hooks);
     const rand = rng(opts.seed == null ? 7 : opts.seed);
     const D = L.docks, R = L.receive, I = L.induct, CV = L.conveyor, ST = L.stow, P = L.pick, Y = L.yard, PS = L.problem, Q = L.quality;
     const geo = geometry(L);
-    const SH = opts.shift || L.shift, at = (hhmm) => toShift(hhmm, L.shiftStart);
+    const at = (hhmm) => toShift(hhmm, L.shiftStart);
 
     // ── Estado ────────────────────────────────────────────
     const S = {
@@ -127,7 +130,8 @@
         });
       }
     });
-    if (opts.routeWeights) S.routes.forEach((r, i) => (r.weight = opts.routeWeights[i] || 0));
+    // una ruta sin volumen no sale esa noche: no entra en ninguna oleada ni en los totales
+    if (opts.routeWeights) S.routes.forEach((r, i) => { r.weight = opts.routeWeights[i] || 0; r.off = !r.weight; });
     const totalWeight = () => S.routes.reduce((s, r) => s + r.weight, 0);
 
     // Plan del turno: camiones programados y oleadas de salida
@@ -137,7 +141,7 @@
       events: (SH.events || []).map((e) => ({ ...e, at: e.at ? at(e.at) : null, state: "pending" })),
       waves: SH.waves.map((w, i) => {
         const aisleIdx = w.aisles.map((id) => ST.aisles.findIndex((a) => a.id === id));
-        return { n: i + 1, at: at(w.at), deadline: at(w.at) + SH.loadWindow, routes: S.routes.filter((r) => aisleIdx.includes(r.aisle)).map((r) => r.n), pickStarted: false, called: false };
+        return { n: i + 1, at: at(w.at), deadline: at(w.at) + SH.loadWindow, routes: S.routes.filter((r) => !r.off && aisleIdx.includes(r.aisle)).map((r) => r.n), pickStarted: false, called: false };
       }),
     };
     // eta: hora real de llegada. Un retraso solo se conoce cuando el camión no aparece a su hora
@@ -442,7 +446,9 @@
       }
 
       // Stow: cada pasillo con su parte de la plantilla
-      const perAisle = rate(ST.rate, "stow", ST) / S.aisles.length;
+      // los stowers se reparten entre los pasillos que tienen paquetes esperando
+      const busy = S.aisles.filter((a) => a.queue.length).length || S.aisles.length;
+      const perAisle = rate(ST.rate, "stow", ST) / busy;
       for (const a of S.aisles) {
         a.acc = cap(a.acc, (perAisle / 60) * dt);
         while (a.acc >= 1 && a.queue.length) {
@@ -554,9 +560,9 @@
         S.sortDoneAt = S.t;
         log(`Sort terminado a las ${clock(L, S.t)}${S.t <= S.plan.cutoff ? " · antes del corte" : " · DESPUÉS del corte"}`, S.t <= S.plan.cutoff ? "out" : "bad");
       }
-      if (!S.over && S.routes.every((r) => r.dispatched) && !S.vans.length) {
+      if (!S.over && S.routes.every((r) => r.dispatched || r.off) && !S.vans.length) {
         S.over = true; S.endAt = S.t;
-        log(`Turno terminado: ${S.routesOut - S.routesLate}/${S.routes.length} rutas a tiempo`, "out");
+        log(`Turno terminado: ${S.routesOut - S.routesLate}/${S.routes.filter((r) => !r.off).length} rutas a tiempo`, "out");
         hooks.fx("end", {});
       }
 
@@ -639,7 +645,7 @@
         { name: "la zona de carros", m: stagingCount() / (rate(I.rate, "induct", I) / 60) },
         { name: "Inducción", m: S.inductQ.length / (rate(I.rate, "induct", I) / 60) },
       ];
-      const perAisle = rate(ST.rate, "stow", ST) / S.aisles.length / 60;
+      const perAisle = rate(ST.rate, "stow", ST) / (S.aisles.filter((a) => a.queue.length).length || S.aisles.length) / 60;
       for (const a of S.aisles) out.push({ name: "stow del pasillo " + a.id, m: a.queue.length / perAisle });
       const pick = S.routes.reduce((s, r) => s + toPick(r), 0);
       out.push({ name: "Pick", m: pick / (rate(P.rate, "pick", P) / 60) });
@@ -669,7 +675,7 @@
         },
         processes: procs, cycle, laborHours, pph: laborHours > 0.5 ? S.sorted / laborHours : null,
         waves: waveForecast(),
-        routesTotal: S.routes.length, routesOut: S.routesOut, routesLate: S.routesLate, routesOnTime: S.routesOut - S.routesLate,
+        routesTotal: S.routes.filter((r) => !r.off).length, routesOut: S.routesOut, routesLate: S.routesLate, routesOnTime: S.routesOut - S.routesLate,
         rollover, bagFill: fill, forecast: forecast(), cutoff: S.plan.cutoff,
       };
     }

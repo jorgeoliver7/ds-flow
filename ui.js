@@ -13,7 +13,8 @@
   const canvas = $("#ds-map");
   // E: motor, S: su estado, V: render. Se recrean al reiniciar la partida.
   let E, S, V, ready = false;
-  const clock = (t) => DSEngine.clock(L, t);
+  // el reloj sale del motor: el turno de tarde empieza a otra hora
+  const clock = (t) => DSEngine.clock(E.L, t);
   const C = new Proxy({}, { get: (_, k) => V.C[k] });
 
   // Escenario: se puede compartir con ?escenario=pico
@@ -262,7 +263,9 @@
   function procStatus(p) {
     // problem solve va según las incidencias que lleguen: se mira su cola, no su UPH
     if (p.key === "ps") { const q = QUEUE.ps(); return !q ? "idle" : q > 25 ? "bad" : q > 10 ? "warn" : "ok"; }
-    if (!QUEUE[p.key]() || p.rate < 1) return "idle";
+    // con menos de 5 min de cola el proceso va por delante del trabajo: si rinde poco es por esperas, no por lento
+    const q = QUEUE[p.key]();
+    if (!q || p.rate < 1 || q / ((p.target * p.staff) / 60) < 5) return "idle";
     const k = p.uph / p.target;
     return k >= 0.95 ? "ok" : k >= 0.8 ? "warn" : "bad";
   }
@@ -356,7 +359,7 @@
   // ── Línea de tiempo del turno ─────────────────────────
   const shiftCanvas = $("#ds-shift");
   function hourTicks(x0, x1, every) {
-    const out = [], first = Math.ceil((x0 + L.shiftStart) / every) * every - L.shiftStart;
+    const out = [], first = Math.ceil((x0 + E.L.shiftStart) / every) * every - E.L.shiftStart;
     for (let x = first; x <= x1; x += every) out.push({ x, label: clock(x) });
     return out;
   }
