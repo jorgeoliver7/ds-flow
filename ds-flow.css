@@ -280,6 +280,13 @@ button, select, input { font: inherit; color: inherit; }
 .ds-plan-out .ds-waves { display: flex; flex-wrap: wrap; gap: 4px 10px; margin-top: 4px; }
 .ds-plan-actions { display: flex; gap: 6px; margin-top: 8px; }
 .ds-plan-actions .ds-btn { flex: 1; padding: 6px 10px; font-size: 12px; }
+.ds-advice { margin-bottom: 12px; padding: 10px 12px; border-radius: 10px; border-left: 3px solid var(--ds-warn); background: color-mix(in oklab, var(--ds-warn) 10%, transparent); }
+.ds-advice.is-bad { border-color: var(--ds-bad); background: color-mix(in oklab, var(--ds-bad) 10%, transparent); }
+.ds-advice p { margin: 2px 0 0; font-size: 12.5px; line-height: 1.45; color: var(--ds-fg); }
+.ds-need { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--ds-line); font-size: 12px; color: var(--ds-fg-soft); }
+.ds-need > span { flex-basis: 100%; }
+.ds-need b { font-family: var(--ds-font-mono); font-weight: 600; color: var(--ds-fg); }
+.ds-need .ds-btn { margin-left: auto; padding: 4px 10px; font-size: 12px; }
 
 /* tiempo de ciclo */
 .ds-cycle-bar { display: flex; height: 12px; border-radius: 999px; overflow: hidden; background: var(--ds-zone); }

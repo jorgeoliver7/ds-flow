@@ -609,17 +609,101 @@
       return Math.min((I.rate * staff.induct * S.eff.induct) / I.staff, (ST.rate * staff.stow * S.eff.stow) / ST.staff) / 60;
     }
 
-    // Hora prevista de fin del sort con el ritmo nominal de la plantilla
-    function forecast(staff) {
+    // Hora prevista de fin del sort con el ritmo nominal de la plantilla.
+    // Modelo de flujo minuto a minuto: los camiones pendientes entran al ritmo de descarga desde su llegada
+    // y el sort va vaciando lo que hay a su capacidad. Así cuenta que al principio de la noche no hay trabajo.
+    function forecast(staff, capOverride) {
       if (S.sortDoneAt != null && !staff) return { sortEnd: S.sortDoneAt, done: true };
       const future = S.plan.trucks.filter((x) => x.state === "pending");
       const onDock = S.trucks.reduce((s, t) => s + t.units, 0);
       const remaining = S.unsorted + onDock + future.reduce((s, x) => s + x.units, 0);
-      let end = S.t + remaining / sortCap(staff);
-      // no se puede acabar antes de descargar y mover el último camión
-      for (const x of future) end = Math.max(end, Math.max(x.eta, S.t) + x.units / (D.unloadRate / 60) + 8);
-      for (const t of S.trucks) if (t.units) end = Math.max(end, S.t + t.units / (D.unloadRate / 60) + 8);
-      return { sortEnd: end, done: false, remaining };
+      const cap = capOverride || sortCap(staff), unload = D.unloadRate / 60;
+      // lo que ya está en muelle se descarga en paralelo, un camión por muelle
+      const feeds = S.trucks.filter((t) => t.units > 0).map((t) => ({ from: S.t, left: t.units }))
+        .concat(future.map((x) => ({ from: Math.max(x.eta, S.t), left: x.units })));
+      let backlog = S.unsorted, t = S.t, last = S.t;
+      while (feeds.some((f) => f.left > 0) || backlog > 0.5) {
+        for (const f of feeds) if (f.left > 0 && f.from <= t) { const n = Math.min(f.left, unload); f.left -= n; backlog += n; last = t + 1; }
+        backlog = Math.max(0, backlog - cap);
+        t += 1;
+        if (t - S.t > 1440) break;
+      }
+      // + recorrido del último paquete: muelle → carros → inducción → cinta → saca
+      const end = Math.max(t, last + 8);
+      return { sortEnd: remaining ? end : S.t, done: false, remaining };
+    }
+
+    // Plantilla mínima para cerrar el sort con margen antes del corte y sacar las oleadas a tiempo.
+    // Usa el rendimiento real medio de una noche (95% del nominal, contando esperas y el reparto entre pasillos),
+    // no el del momento, para que no baile con el ruido.
+    function crewNeeded(margin) {
+      margin = margin == null ? 15 : margin;
+      const eff = 0.95, target = S.plan.cutoff - margin, sortDone = S.sortDoneAt != null;
+      const capI = (n) => (I.rate * n * eff) / I.staff / 60, capS = (n) => (ST.rate * n * eff) / ST.staff / 60;
+      const ends = (c) => forecast({ ...S.staff }, c).sortEnd;
+      // el menor n que cumple, buscando de 1 a 60
+      const least = (fits) => { let lo = 1, hi = 60; if (!fits(hi)) return null; while (lo < hi) { const m = (lo + hi) >> 1; if (fits(m)) hi = m; else lo = m + 1; } return lo; };
+      const staff = { ...S.staff };
+      let reachable = true;
+      if (!sortDone) {
+        // si ni con gente de sobra se llega (camiones tarde), se planifica para acabar cuanto antes
+        const floor = ends(1e9), goal = Math.max(target, floor + 5);
+        reachable = floor <= target;
+        staff.stow = least((n) => ends(capS(n)) <= goal) || 60;
+        staff.induct = least((n) => ends(capI(n)) <= goal) || 60;
+        // la zona de carros alimenta inducción en la misma proporción que la plantilla base
+        staff.receive = Math.max(1, Math.ceil((staff.induct * R.staff) / I.staff));
+      }
+      const lateWith = (n) => waveForecast({ ...staff, pick: n * eff * 0.95 }).reduce((s, w) => s + (w.done ? 0 : w.late), 0);
+      staff.pick = least((n) => lateWith(n) === 0) || 60;
+      const total = (k) => k.reduce((s, x) => s + staff[x], 0);
+      return { staff, reachable, sortDone, sortEnd: sortDone ? S.sortDoneAt : forecast(staff).sortEnd, sort: total(["receive", "induct", "stow", "ps"]), pick: staff.pick };
+    }
+
+    // Recomendación del momento, como la daría un responsable de turno: mover gente donde hace falta.
+    // Devuelve null si no hay nada que mejorar. staff es el reparto propuesto, listo para aplicar.
+    function advise() {
+      if (S.over || S.t < S.plan.firstTruck) return null;
+      const NAMES = { receive: "zona de carros", induct: "inducción", stow: "stow", pick: "pick", ps: "problem solve" };
+      // con el mismo descuento que la plantilla mínima: la previsión de pick es optimista con poco margen
+      const late = (st) => waveForecast({ ...st, pick: st.pick * 0.9 }).reduce((s, w) => s + (w.done ? 0 : w.late), 0);
+      if (S.sortDoneAt == null) {
+        const now = forecast().sortEnd;
+        // mejor reparto de n personas entre inducción y stow
+        const split = (n) => {
+          let best = null;
+          for (let i = 1; i < n; i++) {
+            const st = { ...S.staff, induct: i, stow: n - i }, end = forecast(st).sortEnd;
+            if (!best || end < best.end - 0.5) best = { st, end };
+          }
+          return best;
+        };
+        const pool = S.staff.induct + S.staff.stow;
+                // 1) repartir mejor la gente que ya hay
+        const best = split(pool);
+        if (best && best.end <= now - 10) {
+          const d = best.st.stow - S.staff.stow, [from, to] = d > 0 ? ["induct", "stow"] : ["stow", "induct"];
+          return { id: `move:${from}:${to}`, kind: now > S.plan.cutoff ? "bad" : "warn", staff: best.st,
+            text: `Mueve ${Math.abs(d)} de ${NAMES[from]} a ${NAMES[to]}: el sort acabaría a las ${clock(L, best.end)} en vez de a las ${clock(L, now)}.` };
+        }
+        // 2) si aun así no se llega al corte, la menor cantidad de gente que hay que sumar
+        if (now > S.plan.cutoff && forecast(null, 1e9).sortEnd <= S.plan.cutoff) {
+          for (let extra = 1; extra <= 20; extra++) {
+            const opt = split(pool + extra);
+            if (opt.end > S.plan.cutoff - 5) continue;
+            return { id: "add:sort", kind: "bad", staff: opt.st,
+              text: `No se llega al corte de las ${clock(L, S.plan.cutoff)}: ${extra === 1 ? "falta 1 persona" : `faltan ${extra} personas`}. Con inducción ${opt.st.induct} y stow ${opt.st.stow} el sort acabaría a las ${clock(L, opt.end)} (horas extra o gente de otro turno).` };
+          }
+        }
+      }
+      // 3) pick: refuerzo si alguna oleada va a salir tarde
+      if (S.t >= S.plan.pickStart - 30 && late(S.staff)) {
+        const need = crewNeeded(0).staff.pick;
+        // si ya no hay plantilla razonable que lo arregle, no se recomienda nada
+        if (need > S.staff.pick && need - S.staff.pick <= 10) return { id: "add:pick", kind: "bad", staff: { ...S.staff, pick: need },
+          text: `Refuerza pick con ${need - S.staff.pick} persona${need - S.staff.pick > 1 ? "s" : ""} (${need} en total) para que el pick no retrase las oleadas.` };
+      }
+      return null;
     }
 
     // Previsión por oleada: cuándo acaba su pick y cuándo saldrían sus furgonetas
@@ -704,9 +788,13 @@
       return n;
     }
 
+    // plantilla mínima calculada antes de empezar, para comparar en el informe con la que hubo
+    S.crewPlan = crewNeeded();
+    S.staff0 = { ...S.staff };
+
     return {
       S, L, SH, geo, posOf, step, addTruck, callVan, freePad, laneOf, stagingCount, rate, loads, stowRate, inPlantCount,
-      toPick, forecast, metrics, planAt, sortCap, at, waveForecast, hourRate, log,
+      toPick, forecast, metrics, planAt, sortCap, at, waveForecast, hourRate, log, crewNeeded, advise,
       clock: (t) => clock(L, t),
     };
   }

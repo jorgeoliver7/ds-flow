@@ -36,7 +36,7 @@
     }));
     S = E.S;
     S.speed = prev ? prev.speed : Number($("#ds-speed").value) / 60;
-    S.paused = false; S.selected = null; S.tracked = null; draft = null;
+    S.paused = false; S.selected = null; S.tracked = null; draft = null; advice = { k: null }; ignored = {};
     S.auto = $("#ds-auto").checked;
     V = DSRender.create(E, canvas);
     V.resize(); V.readColors();
@@ -272,6 +272,19 @@
   }
   const sameStaff = (a, b) => Object.keys(a).every((k) => a[k] === b[k]);
 
+  // Recomendación del momento y plantilla mínima: se recalculan cada 2 min de turno, no en cada fotograma
+  const PNAME = { receive: "carros", induct: "inducción", stow: "stow", pick: "pick", ps: "PS" };
+  let advice = { k: null, adv: null, need: null }, ignored = {};
+  function adviceNow() {
+    const k = Math.floor(S.t / 2) + ":" + Object.values(S.staff).join(",");
+    if (advice.k !== k) {
+      const adv = E.advise();
+      advice = { k, adv: adv && !(ignored[adv.id] > S.t) ? adv : null, need: E.crewNeeded() };
+    }
+    return advice;
+  }
+  const crewTxt = (st, keys) => keys.map((k) => `${PNAME[k]} ${st[k]}`).join(" · ");
+
   function renderProcs(m) {
     const staff = draft || S.staff;
     const rows = m.processes.map((p) => {
@@ -295,7 +308,16 @@
       out = `<div class="ds-plan-out">${total} personas · prueba a mover gente con − y + para ver el efecto antes de aplicarlo.
         <div class="ds-waves">Salida prevista: ${waveTxt(m.waves)}</div></div>`;
     }
-    $("#ds-procs").innerHTML = `<table><thead><tr><th>Proceso</th><th>Personas</th><th>UPH</th><th>Obj.</th><th>Cola</th></tr></thead><tbody>${rows}</tbody></table>${out}`;
+    const { adv, need } = adviceNow();
+    const advHtml = adv && !draft ? `<div class="ds-advice is-${adv.kind}"><span class="ds-eyebrow">Recomendación</span><p>${esc(adv.text)}</p>
+      <div class="ds-plan-actions"><button class="ds-btn ds-btn--out" data-plan="advice">Aplicar</button><button class="ds-btn ds-btn--ghost" data-plan="ignore">Ignorar</button></div></div>` : "";
+    // plantilla mínima para llegar al corte con 15 min de margen y sacar todas las oleadas
+    const sortKeys = ["receive", "induct", "stow", "ps"], sortNow = sortKeys.reduce((t, k) => t + S.staff[k], 0);
+    const needHtml = `<div class="ds-need"><span>Plantilla mínima ${need.sortDone ? "" : need.reachable ? "para el corte, con 15 min de margen" : "(el corte ya no se alcanza)"}</span>
+      ${need.sortDone ? "" : `<b>Sort ${need.sort}</b> <small>${crewTxt(need.staff, ["induct", "stow"])} · ahora ${sortNow}</small>`}
+      <b>Pick ${need.pick}</b> <small>ahora ${S.staff.pick}</small>
+      <button class="ds-btn ds-btn--ghost" data-plan="need" title="Carga esta plantilla en el planificador para ver el efecto antes de aplicarla">Probar</button></div>`;
+    $("#ds-procs").innerHTML = `${advHtml}<table><thead><tr><th>Proceso</th><th>Personas</th><th>UPH</th><th>Obj.</th><th>Cola</th></tr></thead><tbody>${rows}</tbody></table>${out}${needHtml}`;
   }
   function onProcs(e) {
     const b = e.target.closest("button"); if (!b) return;
@@ -309,6 +331,16 @@
       E.log(`Cambio de plantilla: ${moves.join(", ")}`, "warn");
     }
     if (b.dataset.plan === "discard") draft = null;
+    if (b.dataset.plan === "need") draft = { ...adviceNow().need.staff };
+    const adv = advice.adv;
+    if (b.dataset.plan === "advice" && adv) {
+      const moves = Object.keys(adv.staff).filter((k) => adv.staff[k] !== S.staff[k]).map((k) => `${PNAME[k]} ${S.staff[k]}→${adv.staff[k]}`);
+      Object.assign(S.staff, adv.staff); advice.k = null;
+      E.log(`Recomendación aplicada: ${moves.join(", ")}`, "out");
+      toast("Recomendación aplicada");
+    }
+    // ignorada: no vuelve a salir la misma en 30 min de turno
+    if (b.dataset.plan === "ignore" && adv) { ignored[adv.id] = S.t + 30; advice.k = null; }
     renderProcs(E.metrics());
   }
   $("#ds-procs").addEventListener("pointerdown", onProcs);
