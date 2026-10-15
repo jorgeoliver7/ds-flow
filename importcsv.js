@@ -4,9 +4,9 @@
 // Formato (separador ";" o ",", con cabecera):
 //   tipo;id;hora;paquetes
 //   camion;T-01;23:05;850     → camión del plan: hora de llegada y paquetes
-//   ruta;R01;;320             → paquetes de una ruta (reparte el volumen entre rutas)
+//   ruta;R001;;220            → paquetes de una ruta (reparte el volumen entre rutas)
 //   corte;;05:30;             → hora de corte del sort (opcional)
-//   oleada;A;06:30;           → hora de salida del pasillo A (opcional)
+//   oleada;1;06:30;           → hora de salida de la oleada 1, o de la primera del pasillo A con "oleada;A" (opcional)
 (function (root) {
   "use strict";
 
@@ -44,14 +44,27 @@
         if (!HHMM.test(hora)) return errors.push(`Línea ${n}: hora de corte no válida`);
         shift.sortCutoff = hora;
       } else if (type === "wave") {
-        if (!L.stow.aisles.some((a) => a.id === id)) return errors.push(`Línea ${n}: pasillo "${id}" no existe`);
+        // id: número de oleada (1, 2…) o letra de pasillo (mueve todas las oleadas de ese pasillo)
+        const isNum = /^\d+$/.test(id);
+        if (isNum ? !(Number(id) >= 1 && Number(id) <= shift.waves.length) : !L.stow.aisles.some((a) => a.id === id)) return errors.push(`Línea ${n}: oleada o pasillo "${id}" no existe`);
         if (!HHMM.test(hora)) return errors.push(`Línea ${n}: hora de oleada no válida`);
         waves[id] = hora;
       }
     });
 
     if (trucks.length) shift.trucks = trucks.sort((a, b) => toMin(a.at) - toMin(b.at));
-    if (Object.keys(waves).length) shift.waves = shift.waves.map((w) => ({ ...w, at: waves[w.aisles[0]] || w.at }));
+    if (Object.keys(waves).length) {
+      // por pasillo: la primera oleada del pasillo va a esa hora y las demás conservan su separación
+      const first = {};
+      for (const w of shift.waves) if (!(w.aisles[0] in first)) first[w.aisles[0]] = toMin(w.at);
+      shift.waves = shift.waves.map((w, i) => {
+        if (waves[String(i + 1)]) return { ...w, at: waves[String(i + 1)] };
+        const a = w.aisles[0];
+        if (!waves[a]) return w;
+        const m = toMin(waves[a]) + toMin(w.at) - first[a] - 720;
+        return { ...w, at: String(Math.floor(((m + 1440) % 1440) / 60)).padStart(2, "0") + ":" + String(((m % 60) + 60) % 60).padStart(2, "0") };
+      });
+    }
     // los eventos del ejemplo (conveyor parado) no son de esta noche
     shift.events = [];
     let weights = null;

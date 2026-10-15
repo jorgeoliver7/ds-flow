@@ -144,7 +144,8 @@
 
     const al = [];
     if (!f.done && late && S.t > S.plan.firstTruck) al.push(["bad", `El sort acabaría a las ${clock(f.sortEnd)}, ${fmtMin(f.sortEnd - m.cutoff)} después del corte (${clock(m.cutoff)})`]);
-    const worst = E.loads().sort((a, b) => b.m - a.m)[0];
+    // el pick trabaja por oleadas con margen: su cola se vigila con la previsión de oleadas, no aquí
+    const worst = E.loads().filter((l) => l.name !== "Pick").sort((a, b) => b.m - a.m)[0];
     if (worst && worst.m > 6) al.push([worst.m > 15 ? "bad" : "warn", `Cuello de botella en ${worst.name}: ${Math.round(worst.m)} min de cola`]);
     const overdue = S.vans.filter((v) => v.state === "loading" && S.t > v.deadline);
     if (overdue.length) al.push(["bad", `${overdue.length} furgoneta${overdue.length > 1 ? "s" : ""} fuera de su ventana de salida`]);

@@ -50,7 +50,7 @@ test("la previsión de fin del sort se acerca a la hora real", () => {
 test("con menos gente en stow el sort acaba más tarde", () => {
   const base = shift({ seed: 5 });
   const short = DSEngine.create(L, { seed: 5 });
-  short.S.staff.stow = 7;
+  short.S.staff.stow = 11;
   run(short, 700);
   assert.ok(short.S.sortDoneAt > base.S.sortDoneAt + 30);
   assert.ok(short.S.sortDoneAt > short.S.plan.cutoff, "y se pasa del corte");
@@ -111,14 +111,14 @@ test("con el conveyor parado no se induce nada", () => {
 
 test("un camión que llega tarde retrasa el sort y se avisa", () => {
   const L2 = JSON.parse(JSON.stringify(L));
-  L2.shift.events.push({ type: "truckLate", truck: "T-08", minutes: 60 });
+  L2.shift.events.push({ type: "truckLate", truck: "T-12", minutes: 90 });
   const logs = [];
   const base = shift({ seed: 7 }), late = DSEngine.create(L2, { seed: 7, hooks: { log: (m) => logs.push(m) } });
   run(late, 700);
-  const pt = late.S.plan.trucks.find((x) => x.id === "T-08");
-  assert.ok(pt.dockedAt >= pt.at + 60);
+  const pt = late.S.plan.trucks.find((x) => x.id === "T-12");
+  assert.ok(pt.dockedAt >= pt.at + 90);
   assert.ok(late.S.sortDoneAt > base.S.sortDoneAt + 10, `${late.S.sortDoneAt} vs ${base.S.sortDoneAt}`);
-  assert.ok(logs.some((m) => m.includes("T-08 viene con 60 min de retraso")));
+  assert.ok(logs.some((m) => m.includes("T-12 viene con 90 min de retraso")));
 });
 
 test("cada escenario lleva a un informe distinto y coherente", () => {
@@ -141,7 +141,7 @@ test("cada escenario lleva a un informe distinto y coherente", () => {
   assert.ok(out.pico.S.plan.volume > out.normal.S.plan.volume * 1.3);
   assert.ok(out.personal.S.sortDoneAt > out.personal.S.plan.cutoff);
   assert.ok(out.personal.r.bad.some((b) => b.includes("después del corte")));
-  assert.ok(out.retraso.r.bad.some((b) => b.includes("T-10 llegó 90 min tarde")));
+  assert.ok(out.retraso.r.bad.some((b) => b.includes("T-12 llegó 90 min tarde")));
   // turno de tarde: poco volumen, otra hora de inicio y solo las rutas con paquetes
   assert.equal(out.pm.S.plan.volume, 500);
   assert.equal(DSEngine.clock({ shiftStart: 14 * 60 }, 0), "14:00");
@@ -156,25 +156,27 @@ test("importar la plantilla CSV cambia la partida", () => {
   const I = require("../importcsv.js");
   const res = I.parse(fs.readFileSync(path.join(__dirname, "..", "ejemplo-turno.csv"), "utf8"), L);
   assert.ok(res.ok, res.errors.join(", "));
-  assert.equal(res.shift.trucks.length, 8);
+  assert.equal(res.shift.trucks.length, 12);
   assert.equal(res.shift.trucks[0].at, "23:00");
-  assert.equal(res.shift.waves[0].at, "06:20");
-  assert.equal(res.weights.length, 24);
+  assert.deepEqual(res.shift.waves.map((w) => w.at), ["06:20", "06:35", "06:50", "07:05", "07:20", "07:35"]);
+  assert.equal(res.weights.length, 120);
   const E = DSEngine.create(L, { seed: 7, shift: res.shift, routeWeights: res.weights });
   run(E, 760);
-  assert.equal(E.S.received, 6800);
-  assert.equal(E.S.routes[22].out, 0, "la ruta sin volumen no recibe paquetes");
-  assert.ok(E.S.routes[2].out > E.S.routes[21].out, "R03 lleva más que R22");
+  assert.equal(E.S.received, res.shift.trucks.reduce((s, t) => s + t.units, 0));
+  assert.equal(E.S.routes[36].out, 0, "la ruta sin volumen no recibe paquetes");
+  assert.equal(E.metrics().routesTotal, 114, "ni cuenta en el turno");
   assert.ok(E.S.over);
 });
 
 test("el CSV con errores se rechaza con mensajes claros", () => {
   const I = require("../importcsv.js");
-  const bad = I.parse("tipo;id;hora;paquetes\ncamion;T-01;25:00;100\nruta;R99;;10\nfurgo;;;\n", L);
+  const bad = I.parse("tipo;id;hora;paquetes\ncamion;T-01;25:00;100\nruta;R999;;10\nfurgo;;;\n", L);
   assert.equal(bad.ok, false);
   assert.equal(bad.errors.length, 4);
   assert.ok(bad.errors[0].includes("Línea 2"));
   assert.equal(I.parse("", L).ok, false);
-  const comma = I.parse("tipo,id,hora,paquetes\ncamion,T-01,23:10,1.200\n", L);
+  const comma = I.parse("tipo,id,hora,paquetes\ncamion,T-01,23:10,1.200\noleada,A,06:00,\n", L);
   assert.ok(comma.ok); assert.equal(comma.shift.trucks[0].units, 1200);
+  // por pasillo: la segunda oleada del pasillo A conserva sus 15 min de separación
+  assert.deepEqual(comma.shift.waves.slice(0, 2).map((w) => w.at), ["06:00", "06:15"]);
 });

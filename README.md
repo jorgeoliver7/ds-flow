@@ -1,6 +1,6 @@
 # DS Flow · el viaje de un paquete
 
-Simulación de un turno de noche en una estación de reparto de última milla, del primer camión a la última furgoneta. Se ve cómo se mueve cada paquete por el plano y, a la vez, las métricas con las que se lleva una estación de verdad: hora prevista de fin del sort, rutas a tiempo, productividad por proceso, calidad y un informe al acabar el turno.
+Simulación de un turno de noche en una estación de reparto de última milla, del primer camión a la última furgoneta: unos 26.000 paquetes, 26 personas en el sort, 120 rutas en 24 estanterías y 6 oleadas de salida. Se ve cómo se mueve cada paquete por el plano y, a la vez, las métricas con las que se lleva una estación de verdad: hora prevista de fin del sort, rutas a tiempo, productividad por proceso, calidad y un informe al acabar el turno.
 
 **Demo:** https://jorgeoliver7.github.io/ds-flow/
 

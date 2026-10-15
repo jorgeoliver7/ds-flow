@@ -203,16 +203,18 @@
     }
 
     function drawAisles() {
-      const perAisle = rate(ST.rate, "stow", ST) / S.aisles.length / 60;
+      // stow es un solo equipo: el color de la cola sale de lo que espera en todos los pasillos
+      const stowMin = S.aisles.reduce((n, a) => n + a.queue.length, 0) / (rate(ST.rate, "stow", ST) / 60);
       for (const a of S.aisles) {
         const sel = isSel("aisle", a.id);
         card(ST.x, a.y, ST.w, ST.h, 10);
         ctx.lineWidth = sel ? 2.5 : 1; ctx.strokeStyle = sel ? C.sel : C.line; ctx.stroke();
-        ctx.fillStyle = loadColor(a.queue.length / perAisle); rr(ST.x, a.y, 4, ST.h, 2); ctx.fill();
+        ctx.fillStyle = loadColor(a.queue.length ? stowMin : 0); rr(ST.x, a.y, 4, ST.h, 2); ctx.fill();
         ctx.textBaseline = "middle";
         text("PASILLO " + a.id, ST.x + ST.w - 12, a.y + 8, MONO(600, 9), C.muted, "right");
         if (a.queue.length) text(a.queue.length + " por stowear", ST.x + 14, a.y + 8, MONO(500, 9), C.soft);
       }
+      if (SHELVES > 1) { drawRacks(); return; }
       for (const r of S.routes) {
         let b = bagRect(r);
         // la saca que se está llenando: cuando una se completa se cierra y se empieza otra
@@ -242,6 +244,36 @@
       text(`STOW A SACAS · ${S.routes.length} RUTAS`, ST.x + ST.w / 2, Math.max(...ST.aisles.map((a) => a.y)) + ST.h + 10, MONO(600, 10), C.muted, "center");
     }
 
+    // Estanterías: una balda por ruta, con la saca que se está llenando como barra horizontal
+    const SHELVES = ST.shelves || 1;
+    function drawRacks() {
+      const racks = ST.racksPerAisle;
+      for (const a of S.aisles) for (let k = 0; k < racks; k++) {
+        const r0 = bagRect(S.routes[a.idx * ST.routesPerAisle + k * SHELVES]);
+        ctx.fillStyle = C.floor; rr(r0.x - 2, r0.y - 2, r0.w + 4, (r0.h + 2) * SHELVES + 2, 6); ctx.fill();
+      }
+      for (const r of S.routes) {
+        const b = bagRect(r), col = C.aisle[r.aisle], n = r.bag.length;
+        const f = n ? (n % ST.bagCapacity || ST.bagCapacity) / ST.bagCapacity : 0, k = bump(r.bump || 0, NOW);
+        if (r.off) { ctx.globalAlpha = 0.35; }
+        ctx.fillStyle = col; ctx.globalAlpha *= 0.55 + k * 0.4;
+        ctx.fillRect(b.x + 1, b.y + 1, (b.w - 2) * f, b.h - 2); ctx.globalAlpha = 1;
+        const sel = isSel("route", r.n), late = r.dispatched && n > 0;
+        if (sel || late || r.van || (r.picking && !r.dispatched)) {
+          ctx.lineWidth = sel ? 2 : 1.5;
+          ctx.strokeStyle = sel ? C.sel : late ? C.bad : r.van ? C.ok : C.warn;
+          rr(b.x, b.y, b.w, b.h, 3); ctx.stroke();
+        }
+        ctx.textBaseline = "middle";
+        text(r.code, b.x + 4, b.y + b.h / 2 + 1, MONO(600, 8), r.off ? C.muted : C.fg);
+        if (r.dispatched && !n) text("✓", b.x + b.w - 4, b.y + b.h / 2 + 1, MONO(600, 9), C.ok, "right");
+        else if (n) text(String(n), b.x + b.w - 4, b.y + b.h / 2 + 1, MONO(500, 8), C.soft, "right");
+      }
+      ctx.textBaseline = "top";
+      const active = S.routes.filter((r) => !r.off).length;
+      text(`STOW · ${S.aisles.length * racks} ESTANTERÍAS · ${active} RUTAS`, ST.x + ST.w / 2, Math.max(...ST.aisles.map((a) => a.y)) + ST.h + 10, MONO(600, 10), C.muted, "center");
+    }
+
     function drawPick() {
       const toPick = S.routes.reduce((s, r) => s + E.toPick(r), 0);
       card(P.x, P.y, P.w, P.h, 10);
@@ -252,11 +284,18 @@
       for (const r of S.routes) {
         if (!r.van && !r.cart.length && !E.toPick(r)) continue;
         const c = cartRect(r), col = C.aisle[r.aisle];
-        ctx.fillStyle = C.floor; rr(c.x, c.y, c.w, c.h, 4); ctx.fill();
+        ctx.fillStyle = C.floor; rr(c.x, c.y, c.w, c.h, 3); ctx.fill();
         ctx.strokeStyle = col; ctx.lineWidth = 1.5; ctx.stroke();
         ctx.textBaseline = "middle";
-        text(r.code, c.x + c.w / 2, c.y + c.h / 2 - 4, MONO(600, 8), C.fg, "center");
-        text(String(r.cart.length), c.x + c.w / 2, c.y + c.h / 2 + 6, MONO(500, 8), C.soft, "center");
+        if (c.h >= 20) {
+          text(r.code, c.x + c.w / 2, c.y + c.h / 2 - 4, MONO(600, 8), C.fg, "center");
+          text(String(r.cart.length), c.x + c.w / 2, c.y + c.h / 2 + 6, MONO(500, 8), C.soft, "center");
+        } else {
+          // celdas pequeñas: el carro se llena de color según lo recogido
+          const tot = r.cart.length + E.toPick(r);
+          ctx.fillStyle = col; ctx.globalAlpha = 0.6; ctx.fillRect(c.x + 1, c.y + 1, (c.w - 2) * (tot ? r.cart.length / tot : 1), c.h - 2); ctx.globalAlpha = 1;
+          text(String(r.cart.length), c.x + c.w / 2, c.y + c.h / 2 + 1, MONO(600, 7), C.fg, "center");
+        }
       }
     }
 
@@ -310,11 +349,20 @@
         const expected = v.loaded + v.incoming + r.cart.length + E.toPick(r);
         ctx.fillRect(x + 6, y + h - 9, (w - 12) * (v.loaded / Math.max(expected, 1)), 4);
         ctx.textBaseline = "top";
-        text(v.id, x + 6, y + 9, MONO(600, 10), C.fg);
-        text(r.code + " · " + v.loaded + "/" + expected, x + 6, y + 23, MONO(500, 9), C.soft);
         // minutos que le quedan para salir a tiempo (en rojo si ya se pasó)
-        const left = v.deadline - S.t;
-        if (v.state === "loading") text((left >= 0 ? Math.ceil(left) : "+" + Math.ceil(-left)) + "′", x + w - 6, y + 9, MONO(600, 9), left < 0 ? C.bad : left < 5 ? C.warn : C.muted, "right");
+        const left = v.deadline - S.t, leftTxt = (left >= 0 ? Math.ceil(left) : "+" + Math.ceil(-left)) + "′";
+        const leftCol = left < 0 ? C.bad : left < 5 ? C.warn : C.muted;
+        if (w > 90) {
+          text(v.id, x + 6, y + 9, MONO(600, 10), C.fg);
+          text(r.code + " · " + v.loaded + "/" + expected, x + 6, y + 23, MONO(500, 9), C.soft);
+          if (v.state === "loading") text(leftTxt, x + w - 6, y + 9, MONO(600, 9), leftCol, "right");
+        } else {
+          // furgoneta estrecha (yard con muchas plazas): ruta, carga y minutos en líneas cortas
+          const cx = x + w / 2;
+          text(r.code, cx, y + 8, MONO(600, 9), C.fg, "center");
+          text(String(v.loaded), cx, y + 21, MONO(500, 8), C.soft, "center");
+          if (v.state === "loading") text(leftTxt, cx, y + 33, MONO(600, 8), leftCol, "center");
+        }
         ctx.globalAlpha = 1;
       }
     }

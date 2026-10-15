@@ -18,23 +18,30 @@
   function geometry(L) {
     const D = L.docks, R = L.receive, ST = L.stow, P = L.pick, Y = L.yard;
     const LANE_LEFT = 112, LANE_GAP = 12;
-    const bagW = (ST.w - 24) / ST.routesPerAisle;
+    // cada pasillo tiene estanterías y cada estantería una balda por ruta
+    const racks = ST.racksPerAisle || ST.routesPerAisle, shelves = ST.shelves || 1;
+    const rackW = (ST.w - 24) / racks, shelfTop = shelves > 1 ? 28 : 38, shelfH = (ST.h - shelfTop - 6) / shelves;
+    // carros de pick: una celda por ruta, en filas dentro de la franja de su pasillo
+    const cartCols = shelves > 1 ? 4 : 2, cartRows = Math.ceil(ST.routesPerAisle / cartCols);
+    const cartW = (P.w - 12) / cartCols, cartH = Math.min(25, (ST.h - 8) / cartRows);
+    // plazas del yard: la mitad de columnas a cada lado del carril central
+    const padCols = Y.padCols || 2, perSide = padCols / 2, padRows = Math.ceil(Y.pads / padCols);
     const g = {
       dockX: (i) => D.left + ((D.right - D.left) / D.count) * (i + 0.5),
       beltY: (a) => a.y + 20,
       bagRect(r) {
-        const a = ST.aisles[r.aisle];
-        return { x: ST.x + 12 + r.j * bagW + 3, y: a.y + 38, w: bagW - 6, h: ST.h - 48 };
+        const a = ST.aisles[r.aisle], rack = Math.floor(r.j / shelves), shelf = r.j % shelves;
+        return { x: ST.x + 12 + rack * rackW + 3, y: a.y + shelfTop + shelf * shelfH + 1, w: rackW - 6, h: shelfH - 2 };
       },
       cartRect(r) {
-        const a = ST.aisles[r.aisle], col = r.j % 2, row = Math.floor(r.j / 2);
-        return { x: P.x + 10 + col * 44, y: a.y + 6 + row * 25, w: 40, h: 21 };
+        const a = ST.aisles[r.aisle], col = r.j % cartCols, row = Math.floor(r.j / cartCols);
+        return { x: P.x + 6 + col * cartW + 1, y: a.y + 4 + row * cartH, w: cartW - 2, h: cartH - 2 };
       },
       padRect(i) {
-        // dos filas de plazas a los lados de un carril central
-        const col = i % 2, row = Math.floor(i / 2), rows = Y.pads / 2;
-        const lane = 56, w = (Y.w - 24 - lane) / 2, h = (Y.h - 80) / rows;
-        return { x: col ? Y.x + Y.w - 12 - w : Y.x + 12, y: Y.y + 40 + row * h, w, h: h - 10 };
+        const side = i % 2, k = Math.floor(i / 2), col = k % perSide, row = Math.floor(k / perSide);
+        const lane = 56, w = (Y.w - 24 - lane) / padCols, h = (Y.h - 80) / padRows;
+        const x0 = side ? Y.x + Y.w - 12 - perSide * w : Y.x + 12;
+        return { x: x0 + col * w + 2, y: Y.y + 40 + row * h, w: w - 4, h: h - 10 };
       },
       // carriles de la zona de carros: un grupo por bloque de pasillos, un carril por tamaño
       laneRect(l) {
@@ -121,7 +128,7 @@
       for (let j = 0; j < ST.routesPerAisle; j++) {
         const n = a.idx * ST.routesPerAisle + j + 1;
         S.routes.push({
-          n, code: "R" + String(n).padStart(2, "0"), aisle: a.idx, j,
+          n, code: "R" + String(n).padStart(ST.aisles.length * ST.routesPerAisle > 99 ? 3 : 2, "0"), aisle: a.idx, j,
           town: L.towns[(n * 3) % L.towns.length],
           weight: 0.5 + rand() * 1.2,  // peso de volumen; un CSV importado lo sustituye por el volumen real
           bag: [], cart: [], van: null, out: 0,
@@ -141,7 +148,10 @@
       events: (SH.events || []).map((e) => ({ ...e, at: e.at ? at(e.at) : null, state: "pending" })),
       waves: SH.waves.map((w, i) => {
         const aisleIdx = w.aisles.map((id) => ST.aisles.findIndex((a) => a.id === id));
-        return { n: i + 1, at: at(w.at), deadline: at(w.at) + SH.loadWindow, routes: S.routes.filter((r) => !r.off && aisleIdx.includes(r.aisle)).map((r) => r.n), pickStarted: false, called: false };
+        // routes: [desde, hasta] dentro del pasillo (1 = la primera ruta del pasillo); sin él, el pasillo entero
+        const [lo, hi] = w.routes || [1, ST.routesPerAisle];
+        const routes = S.routes.filter((r) => !r.off && aisleIdx.includes(r.aisle) && r.j + 1 >= lo && r.j + 1 <= hi).map((r) => r.n);
+        return { n: i + 1, at: at(w.at), deadline: at(w.at) + SH.loadWindow, routes, pickStarted: false, called: false };
       }),
     };
     // eta: hora real de llegada. Un retraso solo se conoce cuando el camión no aparece a su hora
@@ -210,8 +220,8 @@
       };
       hist(p, `Descargado del camión ${truck.id} · muelle ${truck.dock + 1}`);
       S.pkgs.set(id, p);
-      if (S.pkgs.size > 20000) {
-        for (const [k, v] of S.pkgs) { if (S.pkgs.size < 17000) break; if (v.where === "delivered" && k !== S.tracked) S.pkgs.delete(k); }
+      if (S.pkgs.size > 60000) {
+        for (const [k, v] of S.pkgs) { if (S.pkgs.size < 50000) break; if (v.where === "delivered" && k !== S.tracked) S.pkgs.delete(k); }
       }
       return p;
     }
@@ -415,7 +425,10 @@
       for (const l of S.lanes) {
         if (l.open && l.open.items.length && S.t - l.open.touchedAt > R.staleMinutes) { l.open.closedAt = S.t; l.closed.push(l.open); l.open = null; }
       }
-      while (S.moves.length < S.staff.receive && S.inductQ.length < 40) {
+      // se lleva otro carro si inducción no va a tener trabajo para cuando llegue (lo que espera + lo que ya va de camino)
+      const buffer = Math.max(40, (rate(I.rate, "induct", I) / 60) * (R.moveMinutes + 1.5));
+      let coming = S.moves.reduce((n, m) => n + m.cart.items.length, 0);
+      while (S.moves.length < S.staff.receive && S.inductQ.length + coming < buffer) {
         let best = null;
         for (const l of S.lanes) if (l.closed.length && (!best || l.closed[0].closedAt < best.closed[0].closedAt)) best = l;
         if (!best) break;
@@ -425,6 +438,7 @@
         const gy = R.y + R.h + 8, pts = [from, { x: from.x, y: gy }, { x: I.x + I.w / 2, y: gy }, { x: I.x + I.w / 2, y: I.y + I.h - 22 }];
         const segs = pts.slice(1).map((q, i) => Math.hypot(q.x - pts[i].x, q.y - pts[i].y));
         S.moves.push({ cart, lane: best, pts, segs, total: segs.reduce((a, b) => a + b, 0), p: 0 });
+        coming += cart.items.length;
       }
       for (const m of S.moves) {
         m.p += (dt * S.eff.receive) / R.moveMinutes;
@@ -446,11 +460,12 @@
       }
 
       // Stow: cada pasillo con su parte de la plantilla
-      // los stowers se reparten entre los pasillos que tienen paquetes esperando
-      const busy = S.aisles.filter((a) => a.queue.length).length || S.aisles.length;
-      const perAisle = rate(ST.rate, "stow", ST) / busy;
+      // los stowers se reparten entre los pasillos según los paquetes que esperan en cada uno
+      const waiting = S.aisles.reduce((n, a) => n + a.queue.length, 0);
+      const stowRateNow = rate(ST.rate, "stow", ST);
       for (const a of S.aisles) {
-        a.acc = cap(a.acc, (perAisle / 60) * dt);
+        const share = waiting ? a.queue.length / waiting : 1 / S.aisles.length;
+        a.acc = cap(a.acc, ((stowRateNow * share) / 60) * dt);
         while (a.acc >= 1 && a.queue.length) {
           a.acc--; a.done++; count("stow");
           const p = a.queue.shift(), r = S.routes[p.route - 1];
@@ -552,7 +567,8 @@
       const crew = { receive: sortCrew, induct: sortCrew, stow: sortCrew, pick: pickCrew, ps: sortCrew || pickCrew };
       for (const k in crew) if (crew[k]) { S.procMin[k] = (S.procMin[k] || 0) + S.staff[k] * dt; S.laborMin += S.staff[k] * dt; }
       if (Math.floor(S.t / 10) !== Math.floor((S.t - dt) / 10)) {
-        for (const k in S.eff) S.eff[k] = Math.min(1.08, Math.max(0.82, S.eff[k] + (rand() - 0.5) * 0.08));
+        // vuelve poco a poco hacia el 97% (nadie rinde al 100% todo el turno) con algo de ruido
+        for (const k in S.eff) S.eff[k] = Math.min(1.08, Math.max(0.85, S.eff[k] + (0.97 - S.eff[k]) * 0.25 + (rand() - 0.5) * 0.06));
       }
 
       // Fin del sort y fin del turno
@@ -645,8 +661,9 @@
         { name: "la zona de carros", m: stagingCount() / (rate(I.rate, "induct", I) / 60) },
         { name: "Inducción", m: S.inductQ.length / (rate(I.rate, "induct", I) / 60) },
       ];
-      const perAisle = rate(ST.rate, "stow", ST) / (S.aisles.filter((a) => a.queue.length).length || S.aisles.length) / 60;
-      for (const a of S.aisles) out.push({ name: "stow del pasillo " + a.id, m: a.queue.length / perAisle });
+      // stow es un solo equipo que se mueve entre pasillos: su cola es la de todos
+      const stowQ = S.aisles.reduce((n, a) => n + a.queue.length, 0);
+      out.push({ name: "Stow", m: stowQ / (rate(ST.rate, "stow", ST) / 60) });
       const pick = S.routes.reduce((s, r) => s + toPick(r), 0);
       out.push({ name: "Pick", m: pick / (rate(P.rate, "pick", P) / 60) });
       return out;

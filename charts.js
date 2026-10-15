@@ -16,7 +16,7 @@
   function niceMax(v) {
     if (v <= 0) return 1;
     const p = Math.pow(10, Math.floor(Math.log10(v))), n = v / p;
-    return (n <= 1 ? 1 : n <= 2 ? 2 : n <= 2.5 ? 2.5 : n <= 5 ? 5 : 10) * p;
+    return (n <= 1 ? 1 : n <= 2 ? 2 : n <= 2.5 ? 2.5 : n <= 3 ? 3 : n <= 4 ? 4 : n <= 5 ? 5 : 10) * p;
   }
 
   // o: { x0, x1, yMax, xTicks: [{x, label}], yFmt, C (colores), font,

@@ -10,12 +10,12 @@
   const SCENARIOS = [
     {
       id: "normal", name: "Noche normal", seed: 7,
-      desc: "El plan de siempre: 10 camiones, plantilla completa y una parada corta del conveyor.",
+      desc: "Unos 26.000 paquetes en 12 camiones, 26 personas en el sort de noche y una parada corta del conveyor.",
       shift: (sh) => sh,
     },
     {
       id: "pico", name: "Pico (Prime Day)", seed: 21,
-      desc: "Un 40% más de volumen con un refuerzo de plantilla que no llega al mismo ritmo.",
+      desc: "Un 40% más de volumen (unos 37.000 paquetes) con un refuerzo de plantilla que no crece al mismo ritmo.",
       shift: (sh) => { scaleTrucks(sh, 1.4); return sh; },
       staff: (L) => ({ receive: L.receive.staff + 1, induct: L.induct.staff + 1, stow: L.stow.staff + 3, pick: L.pick.staff + 4 }),
     },
@@ -29,7 +29,7 @@
       id: "retraso", name: "Camión retrasado", seed: 45,
       desc: "El último camión llega hora y media tarde y el conveyor se para 20 minutos.",
       shift: (sh) => {
-        sh.events = [{ type: "conveyor", at: "01:20", minutes: 20 }, { type: "truckLate", truck: "T-10", minutes: 90 }];
+        sh.events = [{ type: "conveyor", at: "01:20", minutes: 20 }, { type: "truckLate", truck: "T-12", minutes: 90 }];
         return sh;
       },
     },
