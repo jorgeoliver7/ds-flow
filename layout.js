@@ -23,6 +23,7 @@ const DS_LAYOUT = {
     name: "Zona de carros", code: "CRT",
     x: 170, y: 124, w: 610, h: 112,
     staff: 3,              // personas moviendo carros a inducción
+    uph: 600,              // objetivo: paquetes por hora y persona
     moveMinutes: 1.2,      // lo que tarda un carro en llegar a inducción
     staleMinutes: 4,       // un carro a medio llenar se lleva tras este tiempo sin cambios
     desc: "Lo que sale del camión se coloca en carros, separados por grupo y por tamaño. Cuando inducción tiene hueco, alguien lleva el siguiente carro hasta allí.",
@@ -41,6 +42,7 @@ const DS_LAYOUT = {
     name: "Inducción", code: "IND",
     x: 40, y: 124, w: 110, h: 112,
     rate: 1800, staff: 4,
+    uph: 450,
     desc: "Cada paquete se pone en el conveyor. Al escanearlo, el sistema le asigna su ruta y el pasillo al que tiene que ir.",
   },
 
@@ -49,6 +51,7 @@ const DS_LAYOUT = {
   stow: {
     name: "Stow a sacas", code: "STW",
     rate: 1800, staff: 12,  // repartido entre pasillos
+    uph: 150,
     desc: "Los stowers cogen el paquete del conveyor y lo meten en la saca de su ruta. Cada pasillo tiene las sacas de 8 rutas.",
     aisles: [
       // de arriba abajo: C, B, A
@@ -65,6 +68,7 @@ const DS_LAYOUT = {
     name: "Pick por rutas", code: "PCK",
     x: 806, y: 252, w: 104, h: 456,
     rate: 4200, staff: 14,
+    uph: 300,
     desc: "Antes de cada oleada, los pickers sacan las sacas de sus rutas, las montan en un carro por ruta y las dejan listas para la furgoneta.",
   },
 

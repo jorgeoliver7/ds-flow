@@ -24,7 +24,7 @@
     }, opts));
     S = E.S;
     S.speed = prev ? prev.speed : Number($("#ds-speed").value) / 60;
-    S.paused = false; S.selected = null; S.tracked = null;
+    S.paused = false; S.selected = null; S.tracked = null; draft = null;
     S.auto = $("#ds-auto").checked;
     V = DSRender.create(E, canvas);
     V.resize(); V.readColors();
@@ -65,12 +65,12 @@
       ["Clasificados", S.sorted],
       ["En planta", S.received - S.dispatched],
       ["Stow / h", E.stowRate()],
-      ["Dock-to-stow", S.dockToStow.length ? fmtMin(avg(S.dockToStow)) : "—"],
       ["Rutas fuera", `${m.routesOut}/${m.routesTotal}`],
       ["Rutas a tiempo", m.routesOut ? `<span class="${m.routesLate ? "is-warn" : "is-ok"}">${m.routesOnTime}/${m.routesOut}</span>` : "—"],
       ["Rollover", m.rollover, "paquetes que se quedan"],
       ["Llenado de saca", m.bagFill == null ? "—" : Math.round(m.bagFill * 100) + "%"],
-      ["Entregados", S.delivered],
+      ["Horas trabajadas", m.laborHours.toFixed(1)],
+      ["Paq / h trabajada", m.pph == null ? "—" : Math.round(m.pph), "clasificados"],
     ];
     $("#ds-kpis").innerHTML = kp.map(([l, v, sub]) => `<div class="ds-kpi"><span>${l}</span><strong>${num(v)}</strong>${sub ? `<small>${sub}</small>` : ""}</div>`).join("");
 
@@ -85,6 +85,14 @@
     if (E.freePad() < 0) al.push(["warn", "Yard completo: no caben más furgonetas"]);
     if (m.routesLate) al.push(["warn", `${m.routesLate} ruta${m.routesLate > 1 ? "s salieron" : " salió"} tarde`]);
     if (S.over) al.unshift(["ok", `Turno terminado a las ${clock(S.endAt)}`]);
+    for (const p of m.processes) {
+      const st = procStatus(p);
+      if (st === "bad") al.push(["warn", `${p.name} rinde al ${Math.round((p.uph / p.target) * 100)}% del objetivo (${Math.round(p.uph)} de ${p.target} UPH)`]);
+    }
+    const lateW = m.waves.filter((w) => !w.done && w.late);
+    if (lateW.length) al.push(["bad", `Con el ritmo actual saldrían tarde ${lateW.map((w) => "la oleada " + w.n).join(" y ")}`]);
+    renderProcs(m);
+    renderCycle(m);
     $("#ds-alerts").innerHTML = al.length ? al.map(([k, msg]) => `<li class="is-${k}">${msg}</li>`).join("") : `<li class="is-ok">Turno según el plan, sin incidencias</li>`;
   }
 
@@ -169,6 +177,89 @@
   }
   detailEl.addEventListener("pointerdown", onDetail);
   detailEl.addEventListener("click", (e) => { if (e.detail === 0) onDetail(e); });
+
+  // ── Procesos y planificador de plantilla ──────────────
+  // draft: reparto de personas que se está probando antes de aplicarlo
+  let draft = null;
+  const QUEUE = { receive: () => E.stagingCount(), induct: () => S.inductQ.length, stow: () => S.aisles.reduce((s, a) => s + a.queue.length, 0), pick: () => S.routes.reduce((s, r) => s + E.toPick(r), 0) };
+  // Semáforo: solo cuenta cuando el proceso tiene trabajo (si está parado por falta de paquetes no es culpa suya)
+  function procStatus(p) {
+    if (!QUEUE[p.key]() || p.rate < 1) return "idle";
+    const k = p.uph / p.target;
+    return k >= 0.95 ? "ok" : k >= 0.8 ? "warn" : "bad";
+  }
+  const sameStaff = (a, b) => Object.keys(a).every((k) => a[k] === b[k]);
+
+  function renderProcs(m) {
+    const staff = draft || S.staff;
+    const rows = m.processes.map((p) => {
+      const st = procStatus(p), q = QUEUE[p.key](), cap = (p.target * S.staff[p.key]) / 60;
+      return `<tr><td><i class="ds-sem is-${st}"></i>${p.name}</td>
+        <td class="ds-pp"><button data-pp="${p.key}" data-d="-1" aria-label="Quitar persona de ${p.name}">−</button><b class="${staff[p.key] !== S.staff[p.key] ? "is-changed" : ""}">${staff[p.key]}</b><button data-pp="${p.key}" data-d="1" aria-label="Añadir persona a ${p.name}">+</button></td>
+        <td>${st === "idle" ? "—" : Math.round(p.uph)}</td><td>${p.target}</td><td>${q ? fmtMin(q / cap) : "—"}</td></tr>`;
+    }).join("");
+    const total = Object.values(staff).reduce((s, v) => s + v, 0), base = Object.values(S.staff).reduce((s, v) => s + v, 0);
+    const waveTxt = (ws) => ws.map((w) => `<span>O${w.n} ${w.done ? (w.late ? `<b class="is-bad">${w.late} tarde</b>` : '<b class="is-ok">fuera</b>') : `<b class="${w.late ? "is-bad" : "is-ok"}">${clock(w.depart)}</b>`}</span>`).join("");
+    let out;
+    if (draft && !sameStaff(draft, S.staff)) {
+      const now = E.forecast(), then = E.forecast(draft), wNow = m.waves, wThen = E.waveForecast(draft);
+      const lateNow = wNow.reduce((s, w) => s + w.late, 0), lateThen = wThen.reduce((s, w) => s + w.late, 0);
+      out = `<div class="ds-plan-out">Con este reparto (${total} personas, ${total - base >= 0 ? "+" : ""}${total - base}): fin del sort
+        <b class="${then.sortEnd > S.plan.cutoff ? "is-bad" : "is-ok"}">${clock(then.sortEnd)}</b> (ahora ${clock(now.sortEnd)}) · rutas tarde previstas
+        <b class="${lateThen ? "is-bad" : "is-ok"}">${lateThen}</b> (ahora ${lateNow})
+        <div class="ds-waves">Salida prevista: ${waveTxt(wThen)}</div></div>
+        <div class="ds-plan-actions"><button class="ds-btn ds-btn--out" data-plan="apply">Aplicar</button><button class="ds-btn ds-btn--ghost" data-plan="discard">Descartar</button></div>`;
+    } else {
+      out = `<div class="ds-plan-out">${total} personas · prueba a mover gente con − y + para ver el efecto antes de aplicarlo.
+        <div class="ds-waves">Salida prevista: ${waveTxt(m.waves)}</div></div>`;
+    }
+    $("#ds-procs").innerHTML = `<table><thead><tr><th>Proceso</th><th>Personas</th><th>UPH</th><th>Obj.</th><th>Cola</th></tr></thead><tbody>${rows}</tbody></table>${out}`;
+  }
+  function onProcs(e) {
+    const b = e.target.closest("button"); if (!b) return;
+    if (b.dataset.pp) {
+      draft = draft || { ...S.staff };
+      draft[b.dataset.pp] = Math.max(1, Math.min(60, draft[b.dataset.pp] + Number(b.dataset.d)));
+    }
+    if (b.dataset.plan === "apply" && draft) {
+      const moves = Object.keys(draft).filter((k) => draft[k] !== S.staff[k]).map((k) => `${k} ${S.staff[k]}→${draft[k]}`);
+      Object.assign(S.staff, draft); draft = null;
+      E.log(`Cambio de plantilla: ${moves.join(", ")}`, "warn");
+    }
+    if (b.dataset.plan === "discard") draft = null;
+    renderProcs(E.metrics());
+  }
+  $("#ds-procs").addEventListener("pointerdown", onProcs);
+  $("#ds-procs").addEventListener("click", (e) => { if (e.detail === 0) onProcs(e); });
+
+  // ── Tiempo de ciclo ───────────────────────────────────
+  const CYCLE = { dockInduct: ["Muelle → inducción", "--ds-raw"], inductStow: ["Inducción → saca", "--ds-a"], stowPick: ["Espera en saca → pick", "--ds-c"], pickOut: ["Pick → salida", "--ds-b"] };
+  function renderCycle(m) {
+    const segs = m.cycle.filter((c) => c.min != null), total = segs.reduce((s, c) => s + c.min, 0);
+    if (!segs.length) { $("#ds-cycle").innerHTML = `<p class="ds-hint">Aparece en cuanto se clasifiquen los primeros paquetes.</p>`; return; }
+    $("#ds-cycle").innerHTML = `<div class="ds-cycle-bar">${segs.map((c) => `<i style="width:${(c.min / total) * 100}%;background:var(${CYCLE[c.key][1]})"></i>`).join("")}</div>
+      <ul>${m.cycle.map((c) => `<li><i class="ds-dot" style="background:var(${CYCLE[c.key][1]})"></i>${CYCLE[c.key][0]}<b>${c.min == null ? "—" : fmtMin(c.min)}</b></li>`).join("")}</ul>`;
+  }
+
+  // ── Ritmo por hora ────────────────────────────────────
+  function drawHourly() {
+    const hours = Math.ceil((S.plan.end + 15) / 60), bars = [];
+    let max = 1;
+    for (let h = 0; h < hours; h++) {
+      const H = S.hourly[h]; if (!H) continue;
+      // la hora en curso se escala a hora completa para no parecer una caída
+      const k = h === Math.floor(S.t / 60) ? 60 / Math.max(S.t - h * 60, 5) : 1;
+      bars.push({ x: h * 60 + 4, w: 26, y: H.stow * k, color: C.aisle[0], alpha: k > 1 ? 0.45 : 0.85 });
+      bars.push({ x: h * 60 + 30, w: 26, y: H.pick * k, color: C.aisle[1], alpha: k > 1 ? 0.45 : 0.85 });
+      max = Math.max(max, H.stow * k, H.pick * k);
+    }
+    const target = (L.stow.uph * S.staff.stow);
+    DSCharts.draw($("#ds-hourly"), {
+      C, x0: 0, x1: hours * 60, yMax: Math.max(max, target) * 1.05,
+      xTicks: hourTicks(0, hours * 60, 120), bars,
+      hlines: [{ y: target, color: C.muted, label: "obj. " + num(target) }],
+    });
+  }
 
   // ── Línea de tiempo del turno ─────────────────────────
   const shiftCanvas = $("#ds-shift");
@@ -285,7 +376,7 @@
     if (!S.paused) { let rem = dt * S.speed; while (rem > 0) { const d = Math.min(rem, 0.05); E.step(d); rem -= d; } }
     if (mapVisible) V.draw(now / 1000);
     uiAcc += dt;
-    if (uiAcc > (V.COARSE ? 0.5 : 0.25)) { uiAcc = 0; renderKpis(); drawShift(); drawPlan(); if (S.selected) renderDetail(); }
+    if (uiAcc > (V.COARSE ? 0.5 : 0.25)) { uiAcc = 0; renderKpis(); drawShift(); drawPlan(); drawHourly(); if (S.selected) renderDetail(); }
     requestAnimationFrame(frame);
   }
   window.addEventListener("resize", () => V.resize());

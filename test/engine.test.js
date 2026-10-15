@@ -55,3 +55,25 @@ test("con menos gente en stow el sort acaba más tarde", () => {
   assert.ok(short.S.sortDoneAt > base.S.sortDoneAt + 30);
   assert.ok(short.S.sortDoneAt > short.S.plan.cutoff, "y se pasa del corte");
 });
+
+test("el planificador prevé un sort más temprano con más gente y más tarde con menos", () => {
+  const E = DSEngine.create(L, { seed: 7 });
+  run(E, 90);
+  const now = E.forecast().sortEnd;
+  const more = E.forecast({ ...E.S.staff, stow: E.S.staff.stow + 4, induct: E.S.staff.induct + 1 }).sortEnd;
+  const less = E.forecast({ ...E.S.staff, stow: E.S.staff.stow - 4 }).sortEnd;
+  // con más gente no puede acabar antes de que llegue el último camión, así que puede quedarse igual
+  assert.ok(more <= now && now < less, `${more} <= ${now} < ${less}`);
+  // y no cambia la plantilla real hasta que se aplica
+  assert.equal(E.S.staff.stow, L.stow.staff);
+});
+
+test("métricas por proceso, horas trabajadas y tiempo de ciclo", () => {
+  const E = shift({ seed: 7 });
+  const m = E.metrics();
+  assert.deepEqual(m.processes.map((p) => p.key), ["receive", "induct", "stow", "pick"]);
+  assert.ok(m.laborHours > 50 && m.laborHours < 250, `horas ${m.laborHours}`);
+  assert.ok(m.pph > 0);
+  for (const c of m.cycle) assert.ok(c.min > 0, c.key);
+  assert.ok(m.waves.every((w) => w.done));
+});

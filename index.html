@@ -82,6 +82,23 @@
         <button data-zone="pick">5 · Pick por rutas</button>
         <button data-zone="yard">6 · Yard</button>
       </nav>
+
+      <div class="ds-insights">
+        <div class="ds-card">
+          <h4>Plan frente a real <small><i class="ds-bar ds-bar--plan"></i>plan <i class="ds-dot ds-dot--a"></i>clasificados</small></h4>
+          <canvas id="ds-plan" class="ds-chart" role="img" aria-label="Paquetes clasificados acumulados frente al plan, con la previsión hasta el fin del sort"></canvas>
+        </div>
+
+        <div class="ds-card">
+          <h4>Ritmo por hora <small><i class="ds-dot ds-dot--a"></i>stow <i class="ds-dot ds-dot--b"></i>pick <i class="ds-bar ds-bar--plan"></i>objetivo stow</small></h4>
+          <canvas id="ds-hourly" class="ds-chart" role="img" aria-label="Paquetes stoweados y recogidos por hora, con el objetivo de stow"></canvas>
+        </div>
+
+        <div class="ds-card">
+          <h4>Tiempo de ciclo <small>media por paquete</small></h4>
+          <div id="ds-cycle" class="ds-cycle"></div>
+        </div>
+      </div>
     </section>
 
     <aside class="ds-panel" aria-label="Centro de control">
@@ -101,13 +118,13 @@
       <div class="ds-kpis" id="ds-kpis"></div>
 
       <div class="ds-card">
-        <h4>Alertas</h4>
-        <ul class="ds-alerts" id="ds-alerts"></ul>
+        <h4>Procesos y plantilla <small>UPH por persona · última hora</small></h4>
+        <div id="ds-procs" class="ds-procs"></div>
       </div>
 
       <div class="ds-card">
-        <h4>Plan frente a real <small><i class="ds-bar ds-bar--plan"></i>plan <i class="ds-dot ds-dot--a"></i>clasificados</small></h4>
-        <canvas id="ds-plan" class="ds-chart" role="img" aria-label="Paquetes clasificados acumulados frente al plan, con la previsión hasta el fin del sort"></canvas>
+        <h4>Alertas</h4>
+        <ul class="ds-alerts" id="ds-alerts"></ul>
       </div>
 
       <div class="ds-card">
