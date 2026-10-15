@@ -3,7 +3,7 @@
 // Orientación: docks arriba, conveyor por la izquierda, stow en el centro y
 // yard a la derecha (las furgonetas entran por abajo y salen por arriba).
 // Ritmos en unidades/hora con la plantilla base (staff).
-window.DS_LAYOUT = {
+const DS_LAYOUT = {
   width: 1240,
   height: 740,
   shiftStart: 23 * 60,     // el ciclo arranca a las 23:00
@@ -12,8 +12,8 @@ window.DS_LAYOUT = {
     count: 9,
     wallY: 112,            // pared de muelles (los camiones atracan por encima)
     left: 40, right: 780,
-    truckUnits: 180,
-    unloadRate: 360,       // paq/h por muelle
+    truckUnits: 2000,      // volumen típico de un camión extra (botón + Camión)
+    unloadRate: 2000,      // paq/h por muelle
   },
 
   // Zona de carros: almacenaje temporal entre el dock y el conveyor.
@@ -23,7 +23,8 @@ window.DS_LAYOUT = {
     name: "Zona de carros", code: "CRT",
     x: 170, y: 124, w: 610, h: 112,
     staff: 3,              // personas moviendo carros a inducción
-    moveMinutes: 1.2,      // lo que tarda un carro en llegar a inducción
+    uph: 1400,             // objetivo: paquetes por hora y persona
+    moveMinutes: 1,      // lo que tarda un carro en llegar a inducción
     staleMinutes: 4,       // un carro a medio llenar se lleva tras este tiempo sin cambios
     desc: "Lo que sale del camión se coloca en carros, separados por grupo y por tamaño. Cuando inducción tiene hueco, alguien lleva el siguiente carro hasta allí.",
     groups: [
@@ -31,16 +32,17 @@ window.DS_LAYOUT = {
       { id: "DQX1", aisles: [2] },
     ],
     classes: [
-      { id: "S", name: "Pequeños", short: "PEQ", cap: 40 },
-      { id: "M", name: "Medianos", short: "MED", cap: 24 },
-      { id: "O", name: "Oversize", short: "OVS", cap: 8 },
+      { id: "S", name: "Pequeños", short: "PEQ", cap: 60 },
+      { id: "M", name: "Medianos", short: "MED", cap: 36 },
+      { id: "O", name: "Oversize", short: "OVS", cap: 12 },
     ],
   },
 
   induct: {
     name: "Inducción", code: "IND",
     x: 40, y: 124, w: 110, h: 112,
-    rate: 1800, staff: 4,
+    rate: 5500, staff: 5,
+    uph: 1100,
     desc: "Cada paquete se pone en el conveyor. Al escanearlo, el sistema le asigna su ruta y el pasillo al que tiene que ir.",
   },
 
@@ -48,8 +50,9 @@ window.DS_LAYOUT = {
 
   stow: {
     name: "Stow a sacas", code: "STW",
-    rate: 1800, staff: 12,  // repartido entre pasillos
-    desc: "Los stowers cogen el paquete del conveyor y lo meten en la saca de su ruta. Cada pasillo tiene las sacas de 8 rutas.",
+    rate: 4800, staff: 16,  // los stowers van a los pasillos que tienen paquetes
+    uph: 300,
+    desc: "Los stowers cogen el paquete del conveyor y lo meten en la saca de su ruta. Cada pasillo tiene 8 estanterías con 5 rutas cada una.",
     aisles: [
       // de arriba abajo: C, B, A
       { id: "A", y: 568 },
@@ -57,26 +60,80 @@ window.DS_LAYOUT = {
       { id: "C", y: 252 },
     ],
     x: 180, w: 600, h: 144,
-    routesPerAisle: 8,
-    bagCapacity: 60,
+    racksPerAisle: 8,      // estanterías por pasillo
+    shelves: 5,            // rutas por estantería (una por balda)
+    routesPerAisle: 40,
+    bagCapacity: 40,       // paquetes por saca: una ruta llena varias
   },
 
   pick: {
     name: "Pick por rutas", code: "PCK",
     x: 806, y: 252, w: 104, h: 456,
-    rate: 2400, staff: 8,
-    desc: "Cuando la furgoneta de una ruta está lista, los pickers sacan todas sus sacas, las montan en un carro y las llevan al yard.",
+    rate: 12000, staff: 20,  // equipo de mañana, aparte del de la noche
+    uph: 600,
+    desc: "Antes de cada oleada, los pickers sacan las sacas de sus rutas, las montan en un carro por ruta y las dejan listas para la furgoneta.",
+  },
+
+  // Problem solve: paquetes con incidencias (dañados, sin etiqueta legible o mal clasificados)
+  problem: {
+    name: "Problem solve", code: "PS",
+    x: 806, y: 124, w: 104, h: 112,
+    staff: 2,
+    uph: 30,                             // resoluciones por hora y persona
+    handleMin: 6,                        // minutos mínimos que pasa un paquete en revisión
+    desc: "Aquí acaban los paquetes con incidencias: dañados, sin etiqueta legible o mal clasificados. Se revisan y vuelven al flujo, o se dan de baja si no tienen arreglo.",
+  },
+
+  // Calidad: probabilidad de cada incidencia por paquete
+  quality: {
+    damaged: 0.0015,       // llega dañado del camión
+    noLabel: 0.003,        // la etiqueta no se lee en inducción
+    missort: 0.004,        // el stower lo mete en la saca de al lado
+    writeOff: 0.3,         // de los dañados, los que no tienen arreglo
   },
 
   yard: {
     name: "Yard", code: "YRD",
     x: 940, y: 16, w: 290, h: 708,
-    pads: 12,
-    loadRate: 1200,
-    onTimeMinutes: 15,     // objetivo: furgoneta cargada y fuera en ≤ 15 min
+    pads: 24,
+    padCols: 4,            // columnas de plazas, la mitad a cada lado del carril
+    loadRate: 1800,
     desc: "Las furgonetas entran por abajo, aparcan en su plaza, cargan el carro de su ruta y salen a reparto por arriba.",
+  },
+
+  // Plan del turno. Son valores de ejemplo, no datos reales de ninguna estación:
+  // ajústalos (o importa un CSV desde la app) para simular una noche concreta.
+  shift: {
+    // unos 26.000 paquetes en 12 camiones para un equipo de noche de 26 personas
+    // (3 en carros, 5 en inducción, 16 en stow y 2 en problem solve)
+    trucks: [
+      { at: "23:00", units: 2300 }, { at: "23:10", units: 2100 }, { at: "23:30", units: 2400 },
+      { at: "23:50", units: 2200 }, { at: "00:10", units: 2300 }, { at: "00:35", units: 2100 },
+      { at: "01:00", units: 2400 }, { at: "01:25", units: 2200 }, { at: "01:50", units: 2100 },
+      { at: "02:15", units: 2300 }, { at: "02:40", units: 2000 }, { at: "03:00", units: 1800 },
+    ],
+    sortCutoff: "05:30",   // hora límite para tener todo clasificado en sacas
+    pickLead: 75,          // minutos antes de su oleada en que empieza el pick de una ruta
+    loadWindow: 20,        // minutos desde la hora de la oleada para cargar y salir a tiempo
+    maxWait: 20,           // pasado el límite, la furgoneta espera como mucho esto y sale con lo que tenga
+    // incidencias programadas (para que la demo salga siempre igual)
+    events: [
+      { type: "conveyor", at: "01:20", minutes: 8 },
+    ],
+    // oleadas de 20 rutas cada 15 min: routes es el tramo de rutas del pasillo (1–40)
+    waves: [
+      { at: "06:30", aisles: ["A"], routes: [1, 20] },
+      { at: "06:45", aisles: ["A"], routes: [21, 40] },
+      { at: "07:00", aisles: ["B"], routes: [1, 20] },
+      { at: "07:15", aisles: ["B"], routes: [21, 40] },
+      { at: "07:30", aisles: ["C"], routes: [1, 20] },
+      { at: "07:45", aisles: ["C"], routes: [21, 40] },
+    ],
   },
 
   // Municipios por ruta para la ficha del paquete
   towns: ["Cádiz", "San Fernando", "Chiclana", "Puerto Real", "El Puerto", "Jerez", "Rota", "Conil"],
 };
+
+if (typeof module !== "undefined" && module.exports) module.exports = DS_LAYOUT;
+else window.DS_LAYOUT = DS_LAYOUT;
