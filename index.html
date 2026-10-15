@@ -4,12 +4,12 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>DS Flow · Mapa interactivo de una estación de reparto</title>
-  <meta name="description" content="Simulación interactiva de una estación de reparto de última milla: camiones en 9 muelles, recepción, inducción, conveyor, stow a sacas, pick por rutas y furgonetas en el yard. Con rastreo de paquetes y KPIs del ciclo. Por Jorge Acedo.">
+  <meta name="description" content="Simulación de un turno en una estación de reparto de última milla: plan de camiones, sort, oleadas de salida, productividad por proceso, calidad, escenarios e informe de fin de turno. Por Jorge Acedo.">
   <meta name="author" content="Jorge Acedo">
   <link rel="icon" type="image/svg+xml" href="favicon.svg">
   <link rel="canonical" href="https://jorgeoliver7.github.io/ds-flow/">
   <meta property="og:title" content="DS Flow · Mapa interactivo de una estación de reparto">
-  <meta property="og:description" content="Mete camiones, llama furgonetas y rastrea cualquier paquete desde el muelle hasta la entrega.">
+  <meta property="og:description" content="Un turno de noche entero, del primer camión a la última furgoneta, con sus métricas en vivo y un planificador de plantilla.">
   <meta property="og:url" content="https://jorgeoliver7.github.io/ds-flow/">
   <meta property="og:type" content="website">
   <script>
@@ -31,6 +31,7 @@
       <p>Un turno de una estación de reparto de última milla: camiones, sort, oleadas de salida y sus métricas en vivo.</p>
     </div>
     <div class="ds-actions">
+      <button class="ds-btn" id="ds-present" aria-pressed="false" title="Pantalla completa con lo esencial (tecla P)">▶ Presentar</button>
       <button class="ds-icon" id="ds-theme" aria-label="Cambiar tema">☀</button>
     </div>
   </header>
@@ -40,14 +41,14 @@
       <div class="ds-controls ds-scenario-bar">
         <label class="ds-field">Escenario <select id="ds-scenario"></select></label>
         <p class="ds-scenario-desc" id="ds-scenario-desc"></p>
-        <label class="ds-btn ds-btn--ghost ds-file" title="Simula una noche concreta. El archivo se lee en tu navegador y no se sube a ningún sitio.">Importar CSV<input type="file" id="ds-import" accept=".csv,text/csv"></label>
-        <a class="ds-link" href="ejemplo-turno.csv" download>Plantilla</a>
+        <label class="ds-btn ds-btn--ghost ds-file ds-present-hide" title="Simula una noche concreta. El archivo se lee en tu navegador y no se sube a ningún sitio.">Importar CSV<input type="file" id="ds-import" accept=".csv,text/csv"></label>
+        <a class="ds-link ds-present-hide" href="ejemplo-turno.csv" download>Plantilla</a>
         <button class="ds-btn" id="ds-report-btn">Informe del turno</button>
       </div>
 
       <div class="ds-controls">
-        <button class="ds-btn ds-btn--in" id="ds-add-truck">+ Camión</button>
-        <button class="ds-btn ds-btn--out" id="ds-add-van">+ Furgoneta</button>
+        <button class="ds-btn ds-btn--in ds-present-hide" id="ds-add-truck">+ Camión</button>
+        <button class="ds-btn ds-btn--out ds-present-hide" id="ds-add-van">+ Furgoneta</button>
         <button class="ds-btn" id="ds-pause" aria-pressed="false">❚❚ Pausa</button>
         <button class="ds-btn ds-btn--ghost" id="ds-restart">↺ Reiniciar</button>
         <label class="ds-field">Velocidad
@@ -60,7 +61,7 @@
             <option value="600">600× · turno en ~1 min</option>
           </select>
         </label>
-        <label class="ds-field ds-check"><input type="checkbox" id="ds-auto" checked> Seguir el plan</label>
+        <label class="ds-field ds-check ds-present-hide"><input type="checkbox" id="ds-auto" checked> Seguir el plan</label>
       </div>
 
       <div class="ds-shift-wrap" aria-label="Plan del turno: camiones, corte del sort y oleadas de salida">
@@ -82,7 +83,7 @@
         <span><i class="ds-bar ds-bar--bad"></i>&gt; 15 min</span>
       </div>
 
-      <nav class="ds-zones" aria-label="Zonas de la estación">
+      <nav class="ds-zones ds-present-hide" aria-label="Zonas de la estación">
         <button data-zone="receive">1 · Zona de carros</button>
         <button data-zone="induct">2 · Inducción</button>
         <button data-zone="conveyor">3 · Conveyor</button>
@@ -116,13 +117,13 @@
         <h2>Centro de control</h2>
       </div>
 
-      <form class="ds-track" id="ds-track-form" role="search">
+      <form class="ds-track ds-present-hide" id="ds-track-form" role="search">
         <input id="ds-search" type="text" placeholder="Rastrear paquete · DS00000000" autocomplete="off" spellcheck="false" aria-label="Código de paquete">
         <button class="ds-btn" type="submit">Buscar</button>
         <button class="ds-btn ds-btn--ghost" type="button" id="ds-random">Al azar</button>
       </form>
 
-      <div class="ds-card ds-detail" id="ds-detail" aria-live="polite"></div>
+      <div class="ds-card ds-detail ds-present-hide" id="ds-detail" aria-live="polite"></div>
 
       <div class="ds-kpis" id="ds-kpis"></div>
 
@@ -141,7 +142,7 @@
         <ul class="ds-alerts" id="ds-alerts"></ul>
       </div>
 
-      <div class="ds-card">
+      <div class="ds-card ds-present-hide">
         <h4>Actividad</h4>
         <ul class="ds-log" id="ds-log"></ul>
       </div>

@@ -7,6 +7,8 @@
   const CYCLE = { dockInduct: "Muelle → inducción", inductStow: "Inducción → saca", stowPick: "Espera en saca → pick", pickOut: "Pick → salida" };
   const pct = (v, d = 0) => (v * 100).toFixed(d).replace(".", ",") + "%";
   const dec = (v, d = 1) => (v == null ? "—" : v.toFixed(d).replace(".", ","));
+  // miles con punto también en 4 cifras (toLocaleString("es-ES") deja "8200")
+  const n0 = (v) => String(Math.round(v)).replace(/\B(?=(\d{3})+(?!\d))/g, ".");
   const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
   function build(E, sc) {
@@ -27,15 +29,15 @@
     });
 
     const kpis = [
-      ["Volumen", S.received.toLocaleString("es-ES"), `de ${S.plan.volume.toLocaleString("es-ES")} planificados`],
+      ["Volumen", n0(S.received), `de ${n0(S.plan.volume)} planificados`],
       ["Fin del sort", sortEnd == null ? "Sin terminar" : clock(sortEnd), sortEnd == null ? `corte ${clock(cutoff)}` : sortEnd <= cutoff ? `${fmt(cutoff - sortEnd)} antes del corte` : `${fmt(sortEnd - cutoff)} después del corte`, sortEnd != null && sortEnd <= cutoff ? "ok" : "bad"],
       ["Rutas a tiempo", `${m.routesOnTime}/${m.routesTotal}`, m.routesLate ? `${m.routesLate} tarde` : "todas", m.routesLate ? "bad" : "ok"],
       ["Rollover", String(m.rollover), "paquetes para mañana", m.rollover ? "bad" : "ok"],
       ["Horas trabajadas", dec(m.laborHours), "horas-persona"],
       ["Paquetes / hora trabajada", m.pph == null ? "—" : String(Math.round(m.pph)), "clasificados"],
       ["Llenado de saca", m.bagFill == null ? "—" : pct(m.bagFill)],
-      ["Missort", pct(q.missortRate, 2), `${q.missort} paquetes`, q.missortRate > 0.006 ? "warn" : "ok"],
-      ["DPMO", Math.round(q.dpmo).toLocaleString("es-ES"), "defectos por millón"],
+      ["Missort", pct(q.missortRate, 2), `${q.missort} paquetes`, q.missortRate > 0.005 ? "warn" : "ok"],
+      ["DPMO", n0(q.dpmo), "defectos por millón"],
       ["Problem solve", q.psAvg == null ? "—" : fmt(q.psAvg), `resolución media · ${q.writtenOff} de baja`],
       ["Fin del turno", S.endAt == null ? "En curso" : clock(S.endAt)],
     ];
@@ -45,6 +47,14 @@
       ? `El sort acabó a las ${clock(sortEnd)}, ${fmt(cutoff - sortEnd)} antes del corte.`
       : `El sort acabó a las ${clock(sortEnd)}, ${fmt(sortEnd - cutoff)} después del corte de las ${clock(cutoff)}.`);
     else bad.push(`El sort no llegó a terminar (corte a las ${clock(cutoff)}).`);
+    // si el sort llegó tarde, quién marcó el ritmo: el proceso con menos capacidad nominal
+    if (sortEnd == null || sortEnd > cutoff) {
+      const capOf = (k) => (cfg[k].rate * S.staff[k]) / cfg[k].staff;
+      const [slow, fast] = capOf("stow") <= capOf("induct") ? ["stow", "induct"] : ["induct", "stow"];
+      bad.push(capOf(slow) === capOf(fast)
+        ? `Inducción y stow iban justos: ${n0(capOf(slow))} paq/h cada uno con la plantilla del turno.`
+        : `${PROCS[slow]} marcó el ritmo del sort: con ${S.staff[slow]} personas da ${n0(capOf(slow))} paq/h, frente a ${n0(capOf(fast))} de ${PROCS[fast].toLowerCase()}.`);
+    }
     if (!m.routesLate && m.routesOut === m.routesTotal) good.push(`Las ${m.routesTotal} rutas salieron dentro de su ventana.`);
     for (const w of waves) if (w.late) bad.push(`Oleada ${w.n}: ${w.late} de ${w.routes} rutas salieron tarde (última a las ${clock(w.depart)}, límite ${clock(w.deadline)}).`);
     if (m.rollover) bad.push(`${m.rollover} paquetes se quedan en la estación para mañana (rollover).`);
@@ -82,7 +92,7 @@
 
   function html(r) {
     const k = r.kpis.map(([l, v, sub, cls]) => `<div class="ds-kpi"><span>${l}</span><strong class="${cls ? "is-" + cls : ""}">${esc(v)}</strong>${sub ? `<small>${esc(sub)}</small>` : ""}</div>`).join("");
-    const procs = r.procs.map((p) => `<tr><td>${p.name}</td><td>${p.staff}</td><td>${p.units.toLocaleString("es-ES")}</td><td>${p.uph == null ? "—" : Math.round(p.uph)}</td><td>${p.target}</td>
+    const procs = r.procs.map((p) => `<tr><td>${p.name}</td><td>${p.staff}</td><td>${n0(p.units)}</td><td>${p.uph == null ? "—" : Math.round(p.uph)}</td><td>${p.target}</td>
       <td class="${p.ratio == null ? "" : p.ratio >= 0.95 ? "is-ok" : p.ratio >= 0.85 ? "is-warn" : "is-bad"}">${p.ratio == null ? "—" : pct(p.ratio)}</td></tr>`).join("");
     const waves = r.waves.map((w) => `<tr><td>O${w.n}</td><td>${w.routes}</td><td>${r.clock(w.at)}–${r.clock(w.deadline)}</td><td class="${w.late ? "is-bad" : "is-ok"}">${r.clock(w.depart)}</td><td>${w.late}</td></tr>`).join("");
     const list = (a, empty) => (a.length ? a.map((x) => `<li>${esc(x)}</li>`).join("") : `<li class="ds-hint">${empty}</li>`);

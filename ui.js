@@ -7,7 +7,8 @@
   const D = L.docks, R = L.receive, I = L.induct, ST = L.stow, P = L.pick, Y = L.yard;
   const { avg, fmtMin } = DSEngine;
   const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-  const num = (v) => (typeof v === "number" ? v.toLocaleString("es-ES") : v);
+  // enteros con punto de miles también en 4 cifras ("8.200"), como en el informe
+  const num = (v) => (typeof v === "number" ? String(Math.round(v)).replace(/\B(?=(\d{3})+(?!\d))/g, ".") : v);
 
   const canvas = $("#ds-map");
   // E: motor, S: su estado, V: render. Se recrean al reiniciar la partida.
@@ -123,21 +124,22 @@
 
   function renderKpis() {
     const m = E.metrics(), f = m.forecast, late = f.sortEnd > m.cutoff;
+    // los marcados con * se quedan en el modo presentación
     const kp = [
-      ["Hora", clock(S.t)],
-      [f.done ? "Fin del sort" : "Fin previsto del sort", `<span class="${late ? "is-bad" : "is-ok"}">${clock(f.sortEnd)}</span>`, vsCutoff(f.sortEnd, m.cutoff) + " del corte"],
+      ["*Hora", clock(S.t)],
+      [(f.done ? "*Fin del sort" : "*Fin previsto del sort"), `<span class="${late ? "is-bad" : "is-ok"}">${clock(f.sortEnd)}</span>`, vsCutoff(f.sortEnd, m.cutoff) + " del corte"],
       ["Recibidos", S.received, `de ${num(S.plan.volume)} planificados`],
       ["Clasificados", S.sorted],
       ["En planta", S.received - S.dispatched],
-      ["Stow / h", E.stowRate()],
+      ["*Stow / h", E.stowRate()],
       ["Rutas fuera", `${m.routesOut}/${m.routesTotal}`],
-      ["Rutas a tiempo", m.routesOut ? `<span class="${m.routesLate ? "is-warn" : "is-ok"}">${m.routesOnTime}/${m.routesOut}</span>` : "—"],
-      ["Rollover", m.rollover, "paquetes que se quedan"],
+      ["*Rutas a tiempo", m.routesOut ? `<span class="${m.routesLate ? "is-warn" : "is-ok"}">${m.routesOnTime}/${m.routesOut}</span>` : "—"],
+      ["*Rollover", m.rollover, "paquetes que se quedan"],
       ["Llenado de saca", m.bagFill == null ? "—" : Math.round(m.bagFill * 100) + "%"],
       ["Horas trabajadas", m.laborHours.toFixed(1)],
-      ["Paq / h trabajada", m.pph == null ? "—" : Math.round(m.pph), "clasificados"],
+      ["*Paq / h trabajada", m.pph == null ? "—" : Math.round(m.pph), "clasificados"],
     ];
-    $("#ds-kpis").innerHTML = kp.map(([l, v, sub]) => `<div class="ds-kpi"><span>${l}</span><strong>${num(v)}</strong>${sub ? `<small>${sub}</small>` : ""}</div>`).join("");
+    $("#ds-kpis").innerHTML = kp.map(([l, v, sub]) => `<div class="ds-kpi${l[0] === "*" ? " is-key" : ""}"><span>${l.replace("*", "")}</span><strong>${num(v)}</strong>${sub ? `<small>${sub}</small>` : ""}</div>`).join("");
 
     const al = [];
     if (!f.done && late && S.t > S.plan.firstTruck) al.push(["bad", `El sort acabaría a las ${clock(f.sortEnd)}, ${fmtMin(f.sortEnd - m.cutoff)} después del corte (${clock(m.cutoff)})`]);
@@ -152,11 +154,11 @@
     if (S.over) al.unshift(["ok", `Turno terminado a las ${clock(S.endAt)}`]);
     for (const p of m.processes) {
       const st = procStatus(p);
-      if (st === "bad") al.push(["warn", `${p.name} rinde al ${Math.round((p.uph / p.target) * 100)}% del objetivo (${Math.round(p.uph)} de ${p.target} UPH)`]);
+      if (st === "bad" && p.key !== "ps") al.push(["warn", `${p.name} rinde al ${Math.round((p.uph / p.target) * 100)}% del objetivo (${Math.round(p.uph)} de ${p.target} UPH)`]);
     }
     if (S.conveyorDown) al.unshift(["bad", "Conveyor parado: no se induce nada hasta que vuelva a funcionar"]);
     if (m.quality.psOpen > 25) al.push([m.quality.psOpen > 60 ? "bad" : "warn", `${m.quality.psOpen} paquetes esperando en problem solve`]);
-    if (m.quality.missortRate > 0.006 && S.sorted > 2000) al.push(["warn", `Missorts al ${(m.quality.missortRate * 100).toFixed(2)}%, por encima del 0,6%`]);
+    if (m.quality.missortRate > 0.005 && S.sorted > 2000) al.push(["warn", `Missorts al ${(m.quality.missortRate * 100).toFixed(2).replace(".", ",")}%, por encima del 0,5% objetivo`]);
     const lateW = m.waves.filter((w) => !w.done && w.late);
     if (lateW.length) al.push(["bad", `Con el ritmo actual saldrían tarde ${lateW.map((w) => "la oleada " + w.n).join(" y ")}`]);
     renderProcs(m);
@@ -258,6 +260,8 @@
   const QUEUE = { receive: () => E.stagingCount(), induct: () => S.inductQ.length, stow: () => S.aisles.reduce((s, a) => s + a.queue.length, 0), pick: () => S.routes.reduce((s, r) => s + E.toPick(r), 0), ps: () => S.psQ.length };
   // Semáforo: solo cuenta cuando el proceso tiene trabajo (si está parado por falta de paquetes no es culpa suya)
   function procStatus(p) {
+    // problem solve va según las incidencias que lleguen: se mira su cola, no su UPH
+    if (p.key === "ps") { const q = QUEUE.ps(); return !q ? "idle" : q > 25 ? "bad" : q > 10 ? "warn" : "ok"; }
     if (!QUEUE[p.key]() || p.rate < 1) return "idle";
     const k = p.uph / p.target;
     return k >= 0.95 ? "ok" : k >= 0.8 ? "warn" : "bad";
@@ -319,7 +323,7 @@
   function renderQuality(q) {
     const pct = (v) => (v * 100).toFixed(2).replace(".", ",") + "%";
     const rows = [
-      ["Missort", `<b class="${q.missortRate > 0.006 ? "is-warn" : ""}">${pct(q.missortRate)}</b>`],
+      ["Missort", `<b class="${q.missortRate > 0.005 ? "is-warn" : ""}">${pct(q.missortRate)}</b>`],
       ["DPMO", `<b>${num(Math.round(q.dpmo))}</b>`],
       ["PS abiertos", `<b class="${q.psOpen > 25 ? "is-warn" : ""}">${q.psOpen}</b>`],
       ["Resolución media", `<b>${q.psAvg == null ? "—" : fmtMin(q.psAvg)}</b>`],
@@ -446,6 +450,26 @@
     S.selected = z.startsWith("aisle") ? { kind: "aisle", id: z.slice(5) } : { kind: "zone", id: z };
     renderDetail();
   }));
+
+  // ── Modo presentación ─────────────────────────────────
+  const presentBtn = $("#ds-present"), root = document.documentElement;
+  function setPresent(on) {
+    root.classList.toggle("is-present", on);
+    presentBtn.setAttribute("aria-pressed", String(on));
+    presentBtn.textContent = on ? "■ Salir" : "▶ Presentar";
+    if (on && !document.fullscreenElement && root.requestFullscreen) root.requestFullscreen().catch(() => {});
+    if (!on && document.fullscreenElement) document.exitFullscreen().catch(() => {});
+    requestAnimationFrame(() => V.resize());
+  }
+  presentBtn.addEventListener("click", () => setPresent(!root.classList.contains("is-present")));
+  // salir de pantalla completa con Esc también sale del modo presentación
+  document.addEventListener("fullscreenchange", () => { if (!document.fullscreenElement && root.classList.contains("is-present")) setPresent(false); });
+  // atajos: P presentar, espacio pausa (salvo escribiendo en un campo)
+  document.addEventListener("keydown", (e) => {
+    if (e.target.closest("input, select, textarea") || e.metaKey || e.ctrlKey || e.altKey || reportEl.open) return;
+    if (e.key === "p" || e.key === "P") setPresent(!root.classList.contains("is-present"));
+    else if (e.key === " " && !e.target.closest("button, a")) { e.preventDefault(); pauseBtn.click(); }
+  });
 
   const themeBtn = $("#ds-theme");
   function applyTheme(t) {

@@ -373,6 +373,21 @@ button, select, input { font: inherit; color: inherit; }
   .ds-report-actions { display: none; }
 }
 
+/* ── Modo presentación: pantalla completa y solo lo esencial ── */
+.is-present .ds-present-hide, .is-present .ds-title p, .is-present .ds-back, .is-present .ds-foot { display: none !important; }
+.is-present .ds-top { padding: 12px 28px; grid-template-columns: 1fr auto; }
+/* el plano entero cabe en pantalla: se limita el ancho para que el alto no se salga (plano de 1240×740) */
+.is-present .ds-map-inner { max-width: calc((100vh - 260px) * 1240 / 740); margin: 0 auto; }
+.is-present .ds-main { grid-template-columns: minmax(0, 1fr) 400px; }
+.is-present .ds-kpi:not(.is-key) { display: none; }
+.is-present .ds-kpis { grid-template-columns: repeat(2, 1fr); gap: 8px; }
+.is-present .ds-kpi { padding: 12px 14px; }
+.is-present .ds-kpi > span { font-size: 11px; }
+.is-present .ds-kpi strong { font-size: 26px; }
+.is-present .ds-kpi small { font-size: 12px; }
+.is-present .ds-alerts li { font-size: 14px; }
+.is-present #ds-present { border-color: var(--ds-accent); color: var(--ds-accent); }
+
 /* ── Responsive ───────────────────────────────────── */
 @media (max-width: 1100px) {
   .ds-main { grid-template-columns: 1fr; }

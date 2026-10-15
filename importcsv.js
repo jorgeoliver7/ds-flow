@@ -63,7 +63,7 @@
     const total = shift.trucks.reduce((s, t) => s + t.units, 0);
     return {
       ok: !errors.length, errors, shift, weights,
-      summary: `${shift.trucks.length} camiones · ${total.toLocaleString("es-ES")} paquetes${weights ? ` · ${weights.filter((w) => w > 0).length} rutas con volumen` : ""}`,
+      summary: `${shift.trucks.length} camiones · ${String(total).replace(/\B(?=(\d{3})+(?!\d))/g, ".")} paquetes${weights ? ` · ${weights.filter((w) => w > 0).length} rutas con volumen` : ""}`,
     };
   }
 
