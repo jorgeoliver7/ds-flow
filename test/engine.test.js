@@ -213,3 +213,27 @@ test("la recomendación en directo mueve gente al cuello de botella y adelanta e
   while (N.S.t < 30) N.step(0.1);
   assert.equal(N.advise(), null);
 });
+
+test("plantilla con nombre: cada proceso tiene a sus personas y el trabajo se reparte entre ellas", () => {
+  const SC = require("../scenarios.js");
+  const E = DSEngine.create(L, SC.options(L, "normal")), S = E.S, crew = S.crew;
+  for (const k of ["receive", "induct", "stow", "pick", "ps"]) assert.equal(crew.byProc[k].length, S.staff[k], k);
+  // el equipo habitual rinde al 100%: la partida es la misma que sin plantilla con nombre
+  const plain = DSEngine.create(L, { ...SC.options(L, "normal"), crew: false });
+  run(E, 300); run(plain, 300);
+  assert.equal(E.S.sorted, plain.S.sorted);
+  const ids = new Set(crew.people.map((e) => e.id));
+  assert.equal(ids.size, crew.people.length, "IDs únicos");
+  const stats = crew.stats({ receive: 1400, induct: 1100, stow: 300, pick: 600, ps: 30 });
+  const stowed = stats.reduce((s, e) => s + (e.procs.find((p) => p.key === "stow")?.units || 0), 0);
+  assert.equal(stowed, S.totals.stow, "todo lo stoweado tiene a alguien detrás");
+  // mover gente con el planificador cambia quién está en cada proceso y queda registrado
+  S.staff.induct--; S.staff.stow++;
+  E.step(0.05);
+  assert.equal(crew.byProc.stow.length, S.staff.stow);
+  const mv = crew.moves[crew.moves.length - 1];
+  assert.equal(mv.from, "induct"); assert.equal(mv.to, "stow");
+  // si no queda nadie en el equipo, entra un temporal
+  S.staff.stow += 20; E.step(0.05);
+  assert.ok(crew.byProc.stow.some((e) => e.temp));
+});

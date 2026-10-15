@@ -490,6 +490,8 @@
   // ── Modo presentación ─────────────────────────────────
   const presentBtn = $("#ds-present"), root = document.documentElement;
   function setPresent(on) {
+    // la presentación es del plano: si se estaba en la pestaña de plantilla, se vuelve a la estación
+    if (on) document.querySelector('.ds-tabs [data-view="station"]')?.click();
     root.classList.toggle("is-present", on);
     presentBtn.setAttribute("aria-pressed", String(on));
     presentBtn.textContent = on ? "■ Salir" : "▶ Presentar";
