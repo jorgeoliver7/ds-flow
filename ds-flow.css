@@ -225,6 +225,7 @@ button, select, input { font: inherit; color: inherit; }
 }
 .ds-kpi span { display: block; font-size: 10px; color: var(--ds-fg-muted); text-transform: uppercase; letter-spacing: 0.04em; }
 .ds-kpi strong { display: block; margin-top: 3px; font-family: var(--ds-font-mono); font-size: 16px; font-weight: 600; }
+.ds-kpi small { display: block; margin-top: 2px; font-size: 10px; color: var(--ds-fg-muted); }
 
 .ds-card {
   padding: 12px 14px; border-radius: 12px;
@@ -245,7 +246,18 @@ button, select, input { font: inherit; color: inherit; }
 .ds-alerts li.is-warn { border-color: var(--ds-warn); background: color-mix(in oklab, var(--ds-warn) 10%, transparent); }
 .ds-alerts li.is-bad { border-color: var(--ds-bad); background: color-mix(in oklab, var(--ds-bad) 10%, transparent); }
 
-.ds-spark { display: block; width: 100%; height: 60px; }
+.ds-chart { display: block; width: 100%; height: 150px; }
+.ds-bar--plan { background: var(--ds-fg-muted); }
+
+.ds-shift-wrap {
+  margin-bottom: 12px; padding: 6px 10px 0; border-radius: 14px;
+  background: var(--ds-bg-2); border: 1px solid var(--ds-line);
+}
+.ds-shift { display: block; width: 100%; height: 56px; }
+
+.is-ok { color: var(--ds-ok); }
+.is-warn { color: var(--ds-warn); }
+.is-bad { color: var(--ds-bad); }
 
 .ds-detail { min-height: 120px; }
 .ds-detail h3 { display: flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 600; margin-bottom: 6px; }
@@ -319,6 +331,7 @@ button, select, input { font: inherit; color: inherit; }
 :root .ds-field select,
 :root .ds-track input { border-radius: 999px; }
 :root .ds-card,
+:root .ds-shift-wrap,
 :root .ds-kpi { border-radius: 18px; border-color: transparent; box-shadow: 0 6px 22px var(--ds-shadow); }
 :root .ds-map-wrap { border-radius: 24px; border-color: transparent; box-shadow: 0 10px 40px var(--ds-shadow); }
 :root .ds-title h1 { font-family: var(--ds-font-display); font-weight: 600; font-size: 28px; letter-spacing: -0.02em; }

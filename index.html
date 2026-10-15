@@ -28,7 +28,7 @@
     <a class="ds-back" href="https://jorgeoliver7.github.io/Portfolio-Website/">← Portfolio</a>
     <div class="ds-title">
       <h1>DS Flow <em>· el viaje de un paquete</em></h1>
-      <p>Una estación de reparto de última milla, simulada. Mete camiones, llama furgonetas y rastrea cualquier paquete.</p>
+      <p>Un turno de una estación de reparto de última milla: camiones, sort, oleadas de salida y sus métricas en vivo.</p>
     </div>
     <div class="ds-actions">
       <button class="ds-icon" id="ds-theme" aria-label="Cambiar tema">☀</button>
@@ -41,16 +41,22 @@
         <button class="ds-btn ds-btn--in" id="ds-add-truck">+ Camión</button>
         <button class="ds-btn ds-btn--out" id="ds-add-van">+ Furgoneta</button>
         <button class="ds-btn" id="ds-pause" aria-pressed="false">❚❚ Pausa</button>
+        <button class="ds-btn ds-btn--ghost" id="ds-restart">↺ Reiniciar</button>
         <label class="ds-field">Velocidad
           <select id="ds-speed">
             <option value="1">1× · tiempo real</option>
-            <option value="10" selected>10×</option>
-            <option value="30">30×</option>
+            <option value="10">10×</option>
+            <option value="30" selected>30×</option>
             <option value="60">60×</option>
             <option value="180">180×</option>
+            <option value="600">600× · turno en ~1 min</option>
           </select>
         </label>
-        <label class="ds-field ds-check"><input type="checkbox" id="ds-auto" checked> Piloto automático</label>
+        <label class="ds-field ds-check"><input type="checkbox" id="ds-auto" checked> Seguir el plan</label>
+      </div>
+
+      <div class="ds-shift-wrap" aria-label="Plan del turno: camiones, corte del sort y oleadas de salida">
+        <canvas id="ds-shift" class="ds-shift"></canvas>
       </div>
 
       <div class="ds-map-wrap">
@@ -100,8 +106,8 @@
       </div>
 
       <div class="ds-card">
-        <h4>Tendencia <small><i class="ds-dot ds-dot--raw"></i>en planta <i class="ds-dot ds-dot--a"></i>stow/h</small></h4>
-        <canvas id="ds-spark" class="ds-spark" aria-hidden="true"></canvas>
+        <h4>Plan frente a real <small><i class="ds-bar ds-bar--plan"></i>plan <i class="ds-dot ds-dot--a"></i>clasificados</small></h4>
+        <canvas id="ds-plan" class="ds-chart" role="img" aria-label="Paquetes clasificados acumulados frente al plan, con la previsión hasta el fin del sort"></canvas>
       </div>
 
       <div class="ds-card">
@@ -118,6 +124,7 @@
 
   <script src="layout.js"></script>
   <script src="engine.js"></script>
+  <script src="charts.js"></script>
   <script src="render.js"></script>
   <script src="ui.js"></script>
 </body>

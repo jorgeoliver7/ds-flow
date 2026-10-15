@@ -7,20 +7,31 @@
   const D = L.docks, R = L.receive, I = L.induct, ST = L.stow, P = L.pick, Y = L.yard;
   const { avg, fmtMin } = DSEngine;
   const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  const num = (v) => (typeof v === "number" ? v.toLocaleString("es-ES") : v);
 
   const canvas = $("#ds-map");
-  let V = null, ready = false; // render; ready cuando el panel ya existe
-  const E = DSEngine.create(L, {
-    seed: 7,
-    hooks: { log: () => ready && renderLog(), fx: (k, d) => V && V.onFx(k, d), now: () => performance.now() / 1000 },
-  });
-  const S = E.S, clock = E.clock;
-  S.speed = 10 / 60; S.paused = false; S.selected = null; S.tracked = null;
-  V = DSRender.create(E, canvas);
-  const { rate, stagingCount, loads, stowRate, freePad } = E;
-  const loadColor = (m) => V.loadColor(m);
+  // E: motor, S: su estado, V: render. Se recrean al reiniciar la partida.
+  let E, S, V, ready = false;
+  const clock = (t) => DSEngine.clock(L, t);
   const C = new Proxy({}, { get: (_, k) => V.C[k] });
-  const COARSE = V.COARSE;
+
+  function boot(opts) {
+    ready = false;
+    const prev = S;
+    E = DSEngine.create(L, Object.assign({
+      seed: 7,
+      hooks: { log: () => ready && renderLog(), fx: (k, d) => V && V.onFx(k, d), now: () => performance.now() / 1000 },
+    }, opts));
+    S = E.S;
+    S.speed = prev ? prev.speed : Number($("#ds-speed").value) / 60;
+    S.paused = false; S.selected = null; S.tracked = null;
+    S.auto = $("#ds-auto").checked;
+    V = DSRender.create(E, canvas);
+    V.resize(); V.readColors();
+    pauseBtn.textContent = "❚❚ Pausa"; pauseBtn.setAttribute("aria-pressed", "false");
+    ready = true;
+    renderDetail(); renderLog(); renderKpis();
+  }
 
   canvas.addEventListener("click", (e) => {
     const h = V.hit(...V.local(e));
@@ -42,31 +53,39 @@
     clearTimeout(toast.h); toast.h = setTimeout(() => el.classList.remove("is-on"), 2400);
   }
 
+  // Diferencia con el corte en texto: "20 min antes" / "15 min tarde"
+  const vsCutoff = (t, cutoff) => (t <= cutoff ? `${fmtMin(cutoff - t)} antes` : `${fmtMin(t - cutoff)} tarde`);
+
   function renderKpis() {
-    const vans = S.routesOut, onTime = vans ? Math.round((S.vansOnTime / vans) * 100) + "%" : "—";
+    const m = E.metrics(), f = m.forecast, late = f.sortEnd > m.cutoff;
     const kp = [
       ["Hora", clock(S.t)],
-      ["Recibidos", S.received],
+      [f.done ? "Fin del sort" : "Fin previsto del sort", `<span class="${late ? "is-bad" : "is-ok"}">${clock(f.sortEnd)}</span>`, vsCutoff(f.sortEnd, m.cutoff) + " del corte"],
+      ["Recibidos", S.received, `de ${num(S.plan.volume)} planificados`],
+      ["Clasificados", S.sorted],
       ["En planta", S.received - S.dispatched],
-      ["Stow / h", stowRate()],
+      ["Stow / h", E.stowRate()],
       ["Dock-to-stow", S.dockToStow.length ? fmtMin(avg(S.dockToStow)) : "—"],
-      ["Rutas fuera", vans],
-      ["En reparto", S.dispatched - S.delivered],
+      ["Rutas fuera", `${m.routesOut}/${m.routesTotal}`],
+      ["Rutas a tiempo", m.routesOut ? `<span class="${m.routesLate ? "is-warn" : "is-ok"}">${m.routesOnTime}/${m.routesOut}</span>` : "—"],
+      ["Rollover", m.rollover, "paquetes que se quedan"],
+      ["Llenado de saca", m.bagFill == null ? "—" : Math.round(m.bagFill * 100) + "%"],
       ["Entregados", S.delivered],
-      ["Salida a tiempo", onTime],
     ];
-    $("#ds-kpis").innerHTML = kp.map(([l, v]) => `<div class="ds-kpi"><span>${l}</span><strong>${typeof v === "number" ? v.toLocaleString("es-ES") : v}</strong></div>`).join("");
+    $("#ds-kpis").innerHTML = kp.map(([l, v, sub]) => `<div class="ds-kpi"><span>${l}</span><strong>${num(v)}</strong>${sub ? `<small>${sub}</small>` : ""}</div>`).join("");
 
     const al = [];
-    const worst = loads().sort((a, b) => b.m - a.m)[0];
+    if (!f.done && late && S.t > S.plan.firstTruck) al.push(["bad", `El sort acabaría a las ${clock(f.sortEnd)}, ${fmtMin(f.sortEnd - m.cutoff)} después del corte (${clock(m.cutoff)})`]);
+    const worst = E.loads().sort((a, b) => b.m - a.m)[0];
     if (worst && worst.m > 6) al.push([worst.m > 15 ? "bad" : "warn", `Cuello de botella en ${worst.name}: ${Math.round(worst.m)} min de cola`]);
-    const full = S.routes.filter((r) => r.bag.length >= ST.bagCapacity);
-    if (full.length) al.push(["bad", `Saca llena en ${full.slice(0, 3).map((r) => r.code).join(", ")}${full.length > 3 ? "…" : ""}: llama a su furgoneta`]);
-    const late = S.vans.filter((v) => v.state === "loading" && S.t - v.calledAt > Y.onTimeMinutes);
-    if (late.length) al.push(["warn", `${late.length} furgoneta${late.length > 1 ? "s" : ""} por encima de ${Y.onTimeMinutes} min en yard`]);
-    if (freePad() < 0) al.push(["warn", "Yard completo: no caben más furgonetas"]);
-    if (S.trucks.length === D.count) al.push(["warn", `Los ${D.count} muelles están ocupados`]);
-    $("#ds-alerts").innerHTML = al.length ? al.map(([k, m]) => `<li class="is-${k}">${m}</li>`).join("") : `<li class="is-ok">Ciclo estable, sin incidencias</li>`;
+    const overdue = S.vans.filter((v) => v.state === "loading" && S.t > v.deadline);
+    if (overdue.length) al.push(["bad", `${overdue.length} furgoneta${overdue.length > 1 ? "s" : ""} fuera de su ventana de salida`]);
+    const waiting = S.plan.trucks.filter((x) => x.state === "pending" && S.t >= x.at).length;
+    if (waiting) al.push(["warn", `${waiting} camión${waiting > 1 ? "es esperan" : " espera"} muelle libre`]);
+    if (E.freePad() < 0) al.push(["warn", "Yard completo: no caben más furgonetas"]);
+    if (m.routesLate) al.push(["warn", `${m.routesLate} ruta${m.routesLate > 1 ? "s salieron" : " salió"} tarde`]);
+    if (S.over) al.unshift(["ok", `Turno terminado a las ${clock(S.endAt)}`]);
+    $("#ds-alerts").innerHTML = al.length ? al.map(([k, msg]) => `<li class="is-${k}">${msg}</li>`).join("") : `<li class="is-ok">Turno según el plan, sin incidencias</li>`;
   }
 
   function renderLog() {
@@ -83,6 +102,13 @@
   const stats = (rows) => `<ul class="ds-stats">${rows.map(([k, v]) => `<li><span>${k}</span><b>${v}</b></li>`).join("")}</ul>`;
   const head = (code, title) => `<h3><span class="ds-code">${code}</span>${title}</h3>`;
 
+  function routeState(r) {
+    if (r.dispatched) return `Salió ${clock(r.departAt)}${r.late ? " · tarde" : ""}`;
+    if (r.van) return "Cargando furgoneta";
+    if (r.picking) return "En pick";
+    return "Recibiendo stow";
+  }
+
   function renderDetail() {
     const el = $("#ds-detail"), s = S.selected;
     if (!s) { el.innerHTML = `<p class="ds-hint">Pulsa un paquete en movimiento, una saca, una furgoneta o cualquier zona del mapa. También puedes rastrear un paquete por su código.</p>`; return; }
@@ -98,32 +124,36 @@
         `<p>Carros de paquetes ${l.cls.name.toLowerCase()} del grupo ${l.group.id}, que van a los pasillos ${l.group.aisles.map((i) => ST.aisles[i].id).join(" y ")}.</p>` +
         stats([["Carro abierto", l.open ? `${l.open.id} · ${l.open.items.length}/${l.cls.cap}` : "—"], ["Carros cerrados esperando", l.closed.length], ["Paquetes esperando", waiting + (l.open ? l.open.items.length : 0)], ["Capacidad por carro", l.cls.cap]]);
     } else if (s.kind === "route") {
-      const r = S.routes[s.id - 1];
+      const r = S.routes[s.id - 1], w = r.wave;
       el.innerHTML = head(r.code, `Ruta ${r.code} · ${r.town}`) +
-        stats([["Pasillo", ST.aisles[r.aisle].id], ["En la saca", `${r.bag.length}/${ST.bagCapacity}`], ["Por recoger", r.toPick], ["En el carro", r.cart.length], ["Furgoneta", r.van ? r.van.id : "—"], ["Enviados hoy", r.out]]) +
-        (!r.van && r.bag.length ? `<button class="ds-btn" data-call="${r.n}">Llamar furgoneta</button>` : "");
+        stats([["Estado", routeState(r)], ["Oleada", w ? `${w.n} · salida ${clock(w.at)}–${clock(w.deadline)}` : "—"], ["Pasillo", ST.aisles[r.aisle].id],
+          ["En sacas", `${r.bag.length} · ${Math.ceil(r.bag.length / ST.bagCapacity)} saca${Math.ceil(r.bag.length / ST.bagCapacity) === 1 ? "" : "s"}`],
+          ["Aún por llegar", r.upstream], ["En el carro", r.cart.length], ["Furgoneta", r.van ? r.van.id : "—"], ["Enviados", r.out]]) +
+        (!r.van && !r.dispatched && r.bag.length ? `<button class="ds-btn" data-call="${r.n}">Llamar furgoneta ya</button>` : "");
     } else if (s.kind === "aisle") {
       const a = S.aisles.find((x) => x.id === s.id), routes = S.routes.filter((r) => r.aisle === a.idx);
       el.innerHTML = head("STW", `Pasillo ${a.id}`) + `<p>${ST.desc}</p>` +
         stats([["Rutas", `${routes[0].code}–${routes[routes.length - 1].code}`], ["Esperando stow", a.queue.length], ["Stoweados", a.done], ["Paquetes en sacas", routes.reduce((t, r) => t + r.bag.length, 0)]]) + staffCtl("stow");
     } else if (s.kind === "truck") {
       const t = S.trucks.find((x) => x.id === s.id); if (!t) { S.selected = null; return renderDetail(); }
+      const pt = S.plan.trucks.find((x) => x.id === t.id);
       el.innerHTML = head("IN", `Camión ${t.id}`) + `<p>Tráiler que llega desde un centro de distribución, en el muelle ${t.dock + 1}.</p>` +
-        stats([["Estado", { arriving: "Atracando", unloading: "Descargando", leaving: "Saliendo" }[t.state]], ["Quedan", `${t.units}/${t.total}`], ["Ritmo", D.unloadRate + " paq/h"]]);
+        stats([["Estado", { arriving: "Atracando", unloading: "Descargando", leaving: "Saliendo" }[t.state]], ["Llegada prevista", pt ? clock(pt.at) : "Extra, fuera del plan"], ["Quedan", `${t.units}/${t.total}`], ["Ritmo", D.unloadRate + " paq/h"]]);
     } else if (s.kind === "van") {
       const v = S.vans.find((x) => x.id === s.id); if (!v) { S.selected = null; return renderDetail(); }
       const r = S.routes[v.route - 1];
       el.innerHTML = head("OUT", `Furgoneta ${v.id}`) + `<p>Ruta ${r.code} hacia ${r.town}, plaza ${v.pad + 1} del yard.</p>` +
-        stats([["Estado", { arriving: "Entrando al yard", loading: "Cargando", leaving: "Saliendo a reparto" }[v.state]], ["Carga", `${v.loaded}/${v.expected}`], ["Tiempo en yard", fmtMin(S.t - v.calledAt)], ["Objetivo", `≤ ${Y.onTimeMinutes} min`]]);
+        stats([["Estado", { arriving: "Entrando al yard", loading: "Cargando", leaving: "Saliendo a reparto" }[v.state]], ["Cargados", v.loaded], ["Por cargar", r.cart.length + E.toPick(r)],
+          ["Tiempo en yard", fmtMin(S.t - v.calledAt)], ["Salida a tiempo hasta", clock(v.deadline)]]);
     } else if (s.id === "conveyor") {
       el.innerHTML = head("CNV", "Conveyor") + `<p>Lleva cada paquete desde inducción hasta la boca del pasillo de su ruta.</p>` +
         stats([["En la cinta", S.transit.filter((t) => t.belt).length]]);
     } else {
       const cfg = { receive: R, induct: I, pick: P, yard: Y }[s.id];
       let rows;
-      if (s.id === "receive") rows = [["Paquetes en carros", stagingCount()], ["Carros esperando", S.lanes.reduce((t, l) => t + l.closed.length, 0)], ["Carros en camino", S.moves.length]];
-      if (s.id === "induct") rows = [["En cola", S.inductQ.length], ["Capacidad", Math.round(rate(I.rate, "induct", I)) + " paq/h"]];
-      if (s.id === "pick") rows = [["Por recoger", S.routes.reduce((t, r) => t + r.toPick, 0)], ["Rutas en pick", S.routes.filter((r) => r.toPick || r.cart.length).length], ["Capacidad", Math.round(rate(P.rate, "pick", P)) + " paq/h"]];
+      if (s.id === "receive") rows = [["Paquetes en carros", E.stagingCount()], ["Carros esperando", S.lanes.reduce((t, l) => t + l.closed.length, 0)], ["Carros en camino", S.moves.length]];
+      if (s.id === "induct") rows = [["En cola", S.inductQ.length], ["Capacidad", Math.round(E.rate(I.rate, "induct", I)) + " paq/h"]];
+      if (s.id === "pick") rows = [["Por recoger", S.routes.reduce((t, r) => t + E.toPick(r), 0)], ["Rutas en pick", S.routes.filter((r) => E.toPick(r) || r.cart.length).length], ["Capacidad", Math.round(E.rate(P.rate, "pick", P)) + " paq/h"]];
       if (s.id === "yard") rows = [["Furgonetas", `${S.vans.length}/${Y.pads}`], ["Tiempo medio en yard", S.vanTimes.length ? fmtMin(avg(S.vanTimes)) : "—"], ["Salidas", S.routesOut]];
       el.innerHTML = head(cfg.code, cfg.name) + `<p>${cfg.desc}</p>` + stats(rows) + (s.id !== "yard" ? staffCtl(s.id) : "");
     }
@@ -140,20 +170,70 @@
   detailEl.addEventListener("pointerdown", onDetail);
   detailEl.addEventListener("click", (e) => { if (e.detail === 0) onDetail(e); });
 
-  // Sparkline
-  const spark = $("#ds-spark"), sctx = spark.getContext("2d");
-  function drawSpark() {
-    const dpr = window.devicePixelRatio || 1, w = spark.clientWidth, h = spark.clientHeight;
-    if (spark.width !== Math.round(w * dpr)) { spark.width = Math.round(w * dpr); spark.height = Math.round(h * dpr); }
-    sctx.setTransform(dpr, 0, 0, dpr, 0, 0); sctx.clearRect(0, 0, w, h);
-    const H = S.history; if (H.length < 2) return;
-    const line = (key, color) => {
-      const max = Math.max(...H.map((p) => p[key]), 1);
-      sctx.strokeStyle = color; sctx.lineWidth = 1.6; sctx.beginPath();
-      H.forEach((p, i) => { const x = (i / (H.length - 1)) * w, y = h - 4 - (p[key] / max) * (h - 10); i ? sctx.lineTo(x, y) : sctx.moveTo(x, y); });
-      sctx.stroke();
-    };
-    line("plant", C.raw); line("stow", C.aisle[0]);
+  // ── Línea de tiempo del turno ─────────────────────────
+  const shiftCanvas = $("#ds-shift");
+  function hourTicks(x0, x1, every) {
+    const out = [], first = Math.ceil((x0 + L.shiftStart) / every) * every - L.shiftStart;
+    for (let x = first; x <= x1; x += every) out.push({ x, label: clock(x) });
+    return out;
+  }
+  function drawShift() {
+    const dpr = window.devicePixelRatio || 1, w = shiftCanvas.clientWidth, h = shiftCanvas.clientHeight;
+    if (shiftCanvas.width !== Math.round(w * dpr)) { shiftCanvas.width = Math.round(w * dpr); shiftCanvas.height = Math.round(h * dpr); }
+    const ctx = shiftCanvas.getContext("2d");
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, w, h);
+    const x0 = -10, x1 = S.plan.end + 15, X = (t) => 8 + ((t - x0) / (x1 - x0)) * (w - 16);
+    const by = 30;
+    ctx.font = `500 9px ${C.mono}`; ctx.textBaseline = "top"; ctx.textAlign = "center";
+    for (const t of hourTicks(x0, x1, 60)) { ctx.fillStyle = C.muted; ctx.fillText(t.label, X(t.x), by + 14); ctx.fillRect(X(t.x), by + 8, 1, 4); }
+    // barra de fondo y transcurrido
+    ctx.fillStyle = C.zone; ctx.fillRect(X(x0), by, X(x1) - X(x0), 6);
+    ctx.fillStyle = C.line; ctx.fillRect(X(x0), by, X(Math.min(S.t, x1)) - X(x0), 6);
+    // ventana de sort: del primer camión al corte
+    ctx.fillStyle = C.raw; ctx.globalAlpha = 0.35; ctx.fillRect(X(S.plan.firstTruck), by, X(S.plan.cutoff) - X(S.plan.firstTruck), 6); ctx.globalAlpha = 1;
+    // oleadas: pick (claro) y ventana de salida (sólido)
+    const SH = L.shift;
+    for (const wv of S.plan.waves) {
+      const col = C.aisle[S.routes[wv.routes[0] - 1].aisle];
+      ctx.fillStyle = col; ctx.globalAlpha = 0.3; ctx.fillRect(X(wv.at - SH.pickLead), by, X(wv.at) - X(wv.at - SH.pickLead), 6);
+      ctx.globalAlpha = 1; ctx.fillRect(X(wv.at), by - 2, X(wv.deadline) - X(wv.at), 10);
+      ctx.fillStyle = C.fg; ctx.textBaseline = "bottom"; ctx.fillText("O" + wv.n, X(wv.at + SH.loadWindow / 2), by - 4); ctx.textBaseline = "top";
+    }
+    // camiones
+    for (const pt of S.plan.trucks) {
+      ctx.fillStyle = pt.state === "pending" ? (S.t >= pt.at ? C.warn : C.muted) : C.raw;
+      ctx.beginPath(); ctx.moveTo(X(pt.at), by - 3); ctx.lineTo(X(pt.at) - 3, by - 9); ctx.lineTo(X(pt.at) + 3, by - 9); ctx.closePath(); ctx.fill();
+    }
+    // corte del sort
+    ctx.fillStyle = C.bad; ctx.fillRect(X(S.plan.cutoff) - 1, by - 12, 2, 24);
+    ctx.textBaseline = "bottom"; ctx.fillText("corte " + clock(S.plan.cutoff), X(S.plan.cutoff), by - 13);
+    // fin previsto del sort
+    const f = E.forecast();
+    if (S.t > S.plan.firstTruck) {
+      const fx = X(Math.min(f.sortEnd, x1)), late = f.sortEnd > S.plan.cutoff;
+      ctx.fillStyle = late ? C.bad : C.ok;
+      ctx.beginPath(); ctx.moveTo(fx, by - 3); ctx.lineTo(fx + 5, by + 3); ctx.lineTo(fx, by + 9); ctx.lineTo(fx - 5, by + 3); ctx.closePath(); ctx.fill();
+    }
+    // ahora
+    ctx.fillStyle = C.sel; ctx.fillRect(X(Math.min(S.t, x1)) - 1, by - 6, 2, 18);
+  }
+
+  // ── Plan frente a real ────────────────────────────────
+  function drawPlan() {
+    const H = S.history, x0 = Math.min(S.plan.firstTruck, 0) - 5;
+    const f = E.forecast(), x1 = Math.max(S.plan.cutoff, f.sortEnd) + 20;
+    const total = S.plan.volume + Math.max(0, S.received - S.plan.volume);
+    const real = H.filter((p) => p.t <= x1).map((p) => [p.t, p.sorted]);
+    const series = [
+      { pts: [[S.plan.firstTruck, 0], [S.plan.cutoff, S.plan.volume]], color: C.muted, dash: [5, 4], width: 1.5 },
+      { pts: real, color: C.aisle[0], width: 2 },
+    ];
+    if (!f.done && S.t > S.plan.firstTruck) series.push({ pts: [[S.t, S.sorted], [f.sortEnd, total]], color: f.sortEnd > S.plan.cutoff ? C.bad : C.ok, dash: [2, 3], width: 1.5 });
+    DSCharts.draw($("#ds-plan"), {
+      C, x0, x1, yMax: total, yFmt: (v) => (v >= 1000 ? (v / 1000).toFixed(v % 1000 ? 1 : 0) + "k" : v),
+      xTicks: hourTicks(x0, x1, 60), series,
+      vlines: [{ x: S.plan.cutoff, color: C.bad, label: "corte" }],
+    });
   }
 
   // ── Controles ─────────────────────────────────────────
@@ -165,6 +245,7 @@
     pauseBtn.textContent = S.paused ? "▶ Reanudar" : "❚❚ Pausa";
     pauseBtn.setAttribute("aria-pressed", String(S.paused));
   });
+  $("#ds-restart").addEventListener("click", () => boot());
   // el selector es un multiplicador sobre tiempo real; el motor avanza en minutos simulados
   $("#ds-speed").addEventListener("change", (e) => { S.speed = Number(e.target.value) / 60; });
   $("#ds-auto").addEventListener("change", (e) => { S.auto = e.target.checked; });
@@ -185,32 +266,28 @@
     document.documentElement.dataset.theme = t;
     try { localStorage.setItem("a-theme", t); } catch (e) {}
     themeBtn.textContent = t === "light" ? "☾" : "☀";
-    V.readColors();
+    if (V) V.readColors();
   }
   themeBtn.addEventListener("click", () => applyTheme(document.documentElement.dataset.theme === "light" ? "dark" : "light"));
   let saved = "dark"; try { saved = localStorage.getItem("a-theme") || "dark"; } catch (e) {}
   applyTheme(saved === "light" ? "light" : "dark");
 
   // ── Bucle ─────────────────────────────────────────────
+  boot();
   let last = performance.now(), uiAcc = 0, mapVisible = true;
   // si el mapa no está en pantalla (p. ej. leyendo el panel en el móvil), la simulación sigue pero no se dibuja
   if ("IntersectionObserver" in window) new IntersectionObserver((es) => { mapVisible = es[0].isIntersecting; }).observe(canvas);
   // en táctil dibujamos a ~30 fps: el movimiento sigue fluido y el móvil trabaja la mitad
-  const MIN_FRAME = COARSE ? 1000 / 31 : 0;
+  const MIN_FRAME = V.COARSE ? 1000 / 31 : 0;
   function frame(now) {
     if (now - last < MIN_FRAME) { requestAnimationFrame(frame); return; }
     const dt = Math.min((now - last) / 1000, 0.1); last = now;
     if (!S.paused) { let rem = dt * S.speed; while (rem > 0) { const d = Math.min(rem, 0.05); E.step(d); rem -= d; } }
     if (mapVisible) V.draw(now / 1000);
     uiAcc += dt;
-    if (uiAcc > (COARSE ? 0.5 : 0.25)) { uiAcc = 0; renderKpis(); drawSpark(); if (S.selected) renderDetail(); }
+    if (uiAcc > (V.COARSE ? 0.5 : 0.25)) { uiAcc = 0; renderKpis(); drawShift(); drawPlan(); if (S.selected) renderDetail(); }
     requestAnimationFrame(frame);
   }
-
-  window.addEventListener("resize", V.resize);
-  V.resize();
-
-  ready = true;
-  renderDetail(); renderLog(); renderKpis();
+  window.addEventListener("resize", () => V.resize());
   requestAnimationFrame(frame);
 })();

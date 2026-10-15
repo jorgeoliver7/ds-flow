@@ -12,8 +12,8 @@ const DS_LAYOUT = {
     count: 9,
     wallY: 112,            // pared de muelles (los camiones atracan por encima)
     left: 40, right: 780,
-    truckUnits: 180,
-    unloadRate: 360,       // paq/h por muelle
+    truckUnits: 600,       // volumen típico de un camión extra (botón + Camión)
+    unloadRate: 600,       // paq/h por muelle
   },
 
   // Zona de carros: almacenaje temporal entre el dock y el conveyor.
@@ -58,23 +58,42 @@ const DS_LAYOUT = {
     ],
     x: 180, w: 600, h: 144,
     routesPerAisle: 8,
-    bagCapacity: 60,
+    bagCapacity: 40,       // paquetes por saca: una ruta llena varias
   },
 
   pick: {
     name: "Pick por rutas", code: "PCK",
     x: 806, y: 252, w: 104, h: 456,
-    rate: 2400, staff: 8,
-    desc: "Cuando la furgoneta de una ruta está lista, los pickers sacan todas sus sacas, las montan en un carro y las llevan al yard.",
+    rate: 4200, staff: 14,
+    desc: "Antes de cada oleada, los pickers sacan las sacas de sus rutas, las montan en un carro por ruta y las dejan listas para la furgoneta.",
   },
 
   yard: {
     name: "Yard", code: "YRD",
     x: 940, y: 16, w: 290, h: 708,
     pads: 12,
-    loadRate: 1200,
-    onTimeMinutes: 15,     // objetivo: furgoneta cargada y fuera en ≤ 15 min
+    loadRate: 1800,
     desc: "Las furgonetas entran por abajo, aparcan en su plaza, cargan el carro de su ruta y salen a reparto por arriba.",
+  },
+
+  // Plan del turno. Son valores de ejemplo, no datos reales de ninguna estación:
+  // ajústalos (o importa un CSV desde la app) para simular una noche concreta.
+  shift: {
+    trucks: [
+      { at: "23:05", units: 820 }, { at: "23:20", units: 760 }, { at: "23:40", units: 900 },
+      { at: "00:10", units: 850 }, { at: "00:40", units: 940 }, { at: "01:10", units: 780 },
+      { at: "01:45", units: 880 }, { at: "02:20", units: 820 }, { at: "02:50", units: 760 },
+      { at: "03:20", units: 690 },
+    ],
+    sortCutoff: "05:30",   // hora límite para tener todo clasificado en sacas
+    pickLead: 75,          // minutos antes de su oleada en que empieza el pick de una ruta
+    loadWindow: 25,        // minutos desde la hora de la oleada para cargar y salir a tiempo
+    maxWait: 20,           // pasado el límite, la furgoneta espera como mucho esto y sale con lo que tenga
+    waves: [
+      { at: "06:30", aisles: ["A"] },
+      { at: "07:00", aisles: ["B"] },
+      { at: "07:30", aisles: ["C"] },
+    ],
   },
 
   // Municipios por ruta para la ficha del paquete

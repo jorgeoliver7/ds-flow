@@ -215,7 +215,9 @@
       }
       for (const r of S.routes) {
         let b = bagRect(r);
-        const col = C.aisle[r.aisle], f = Math.min(r.bag.length / ST.bagCapacity, 1);
+        // la saca que se está llenando: cuando una se completa se cierra y se empieza otra
+        const col = C.aisle[r.aisle], n = r.bag.length, bags = Math.ceil(n / ST.bagCapacity);
+        const f = n ? (n % ST.bagCapacity || ST.bagCapacity) / ST.bagCapacity : 0;
         // la saca se infla con la carga y rebota al recibir un paquete
         const k = bump(r.bump || 0, NOW), sx = 0.9 + f * 0.1 + k * 0.06, sy = 0.92 + f * 0.08 - k * 0.04;
         b = { x: b.x + (b.w * (1 - sx)) / 2, y: b.y + b.h * (1 - sy), w: b.w * sx, h: b.h * sy };
@@ -223,27 +225,32 @@
         ctx.fillStyle = C.floor; rr(b.x, b.y, b.w, b.h, 10); ctx.fill();
         ctx.save(); rr(b.x, b.y, b.w, b.h, 10); ctx.clip();
         ctx.fillStyle = col; ctx.globalAlpha = 0.7; ctx.fillRect(b.x, b.y + b.h * (1 - f), b.w, b.h * f); ctx.restore();
-        const full = r.bag.length >= ST.bagCapacity, sel = isSel("route", r.n);
-        ctx.lineWidth = r.van || sel || full ? 2 : 1;
-        ctx.strokeStyle = sel ? C.sel : full ? C.bad : r.van ? C.ok : C.line;
-        rr(b.x, b.y, b.w, b.h, 10); ctx.stroke();
+        const sel = isSel("route", r.n), late = r.dispatched && n > 0;
+        ctx.lineWidth = r.van || sel || r.picking || late ? 2 : 1;
+        ctx.strokeStyle = sel ? C.sel : late ? C.bad : r.van ? C.ok : r.picking && !r.dispatched ? C.warn : C.line;
+        if (r.dispatched && !n) ctx.setLineDash([3, 3]);
+        rr(b.x, b.y, b.w, b.h, 10); ctx.stroke(); ctx.setLineDash([]);
         ctx.textBaseline = "top";
         text(r.code, b.x + b.w / 2, b.y + 5, MONO(600, 9), C.fg, "center");
-        text(String(r.bag.length), b.x + b.w / 2, b.y + b.h - 15, MONO(600, 10), C.fg, "center");
+        if (r.dispatched && !n) text("✓", b.x + b.w / 2, b.y + b.h / 2 - 6, MONO(600, 12), C.ok, "center");
+        else {
+          text(String(n), b.x + b.w / 2, b.y + b.h - 15, MONO(600, 10), C.fg, "center");
+          if (bags > 1) text("×" + bags, b.x + b.w / 2, b.y + 17, MONO(500, 8), C.soft, "center");
+        }
       }
       ctx.textBaseline = "top";
       text(`STOW A SACAS · ${S.routes.length} RUTAS`, ST.x + ST.w / 2, Math.max(...ST.aisles.map((a) => a.y)) + ST.h + 10, MONO(600, 10), C.muted, "center");
     }
 
     function drawPick() {
-      const toPick = S.routes.reduce((s, r) => s + r.toPick, 0);
+      const toPick = S.routes.reduce((s, r) => s + E.toPick(r), 0);
       card(P.x, P.y, P.w, P.h, 10);
       ctx.lineWidth = isSel("zone", "pick") ? 2.5 : 1; ctx.strokeStyle = isSel("zone", "pick") ? C.sel : C.line; ctx.stroke();
       ctx.fillStyle = loadColor(toPick / (rate(P.rate, "pick", P) / 60)); rr(P.x, P.y, P.w, 4, 2); ctx.fill();
       ctx.textBaseline = "top";
       text("PICK · CARROS", P.x + P.w / 2, P.y + P.h + 10, MONO(600, 10), C.muted, "center");
       for (const r of S.routes) {
-        if (!r.van && !r.cart.length && !r.toPick) continue;
+        if (!r.van && !r.cart.length && !E.toPick(r)) continue;
         const c = cartRect(r), col = C.aisle[r.aisle];
         ctx.fillStyle = C.floor; rr(c.x, c.y, c.w, c.h, 4); ctx.fill();
         ctx.strokeStyle = col; ctx.lineWidth = 1.5; ctx.stroke();
@@ -291,12 +298,14 @@
         ctx.fillStyle = C.line; rr(x + 8, y - 3, w - 16, 6, 3); ctx.fill(); // parabrisas
         ctx.fillStyle = C.aisle[r.aisle]; ctx.fillRect(x + 4, y, w - 8, 3);
         if (isSel("van", v.id)) { ctx.strokeStyle = C.sel; ctx.lineWidth = 2; rr(x, y, w, h, 12); ctx.stroke(); }
-        ctx.fillRect(x + 6, y + h - 9, (w - 12) * (v.loaded / Math.max(v.expected, 1)), 4);
+        const expected = v.loaded + v.incoming + r.cart.length + E.toPick(r);
+        ctx.fillRect(x + 6, y + h - 9, (w - 12) * (v.loaded / Math.max(expected, 1)), 4);
         ctx.textBaseline = "top";
         text(v.id, x + 6, y + 9, MONO(600, 10), C.fg);
-        text(r.code + " · " + v.loaded + "/" + v.expected, x + 6, y + 23, MONO(500, 9), C.soft);
-        const mins = S.t - v.calledAt;
-        if (v.state === "loading") text(Math.floor(mins) + "′", x + w - 6, y + 9, MONO(600, 9), mins > Y.onTimeMinutes ? C.bad : C.muted, "right");
+        text(r.code + " · " + v.loaded + "/" + expected, x + 6, y + 23, MONO(500, 9), C.soft);
+        // minutos que le quedan para salir a tiempo (en rojo si ya se pasó)
+        const left = v.deadline - S.t;
+        if (v.state === "loading") text((left >= 0 ? Math.ceil(left) : "+" + Math.ceil(-left)) + "′", x + w - 6, y + 9, MONO(600, 9), left < 0 ? C.bad : left < 5 ? C.warn : C.muted, "right");
         ctx.globalAlpha = 1;
       }
     }
