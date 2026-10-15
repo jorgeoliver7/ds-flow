@@ -14,14 +14,23 @@ JavaScript sin dependencias y Canvas. Sin build: es una página estática.
 | --- | --- |
 | `index.html` | Estructura de la página y controles |
 | `ds-flow.css` | Estilos (temas claro/oscuro y estilos "Claude" y "Editorial") |
-| `layout.js` | Geometría de la estación: muelles, conveyor, sacas, yard |
-| `sim.js` | Simulación, render en Canvas, rastreo y KPIs |
+| `layout.js` | Geometría y parámetros de la estación: muelles, conveyor, sacas, yard |
+| `engine.js` | Motor de la simulación y métricas, sin DOM (se prueba en Node) |
+| `render.js` | Dibujo del plano en Canvas |
+| `ui.js` | Centro de control, controles y bucle de animación |
+| `test/` | Pruebas del motor (`npm test`) |
 
 ## Ejecutar en local
 
 ```bash
 python3 -m http.server 8000
 # abre http://localhost:8000
+```
+
+## Tests
+
+```bash
+npm test   # node --test, sin dependencias
 ```
 
 ## Despliegue

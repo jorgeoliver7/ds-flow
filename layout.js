@@ -3,7 +3,7 @@
 // Orientación: docks arriba, conveyor por la izquierda, stow en el centro y
 // yard a la derecha (las furgonetas entran por abajo y salen por arriba).
 // Ritmos en unidades/hora con la plantilla base (staff).
-window.DS_LAYOUT = {
+const DS_LAYOUT = {
   width: 1240,
   height: 740,
   shiftStart: 23 * 60,     // el ciclo arranca a las 23:00
@@ -80,3 +80,6 @@ window.DS_LAYOUT = {
   // Municipios por ruta para la ficha del paquete
   towns: ["Cádiz", "San Fernando", "Chiclana", "Puerto Real", "El Puerto", "Jerez", "Rota", "Conil"],
 };
+
+if (typeof module !== "undefined" && module.exports) module.exports = DS_LAYOUT;
+else window.DS_LAYOUT = DS_LAYOUT;
