@@ -78,13 +78,23 @@
       if (dPick >= 2) bad.push(`En pick bastaba${cp.pick === 1 ? "" : "n"} ${pers(cp.pick)} y había ${s0.pick}.`);
       else if (dPick < 0) bad.push(`En pick hacían falta ${pers(cp.pick)} y había ${s0.pick}.`);
     }
+    // personas: la mejor del turno y quién necesita seguimiento (comparadas con su propio equipo)
+    let people = null;
+    if (S.crew) {
+      people = S.crew.stats({ receive: L.receive.uph, induct: L.induct.uph, stow: L.stow.uph, pick: L.pick.uph, ps: L.problem.uph }).filter((e) => e.hours > 0.5);
+      const best = people.filter((e) => e.vsTeam != null).sort((a, b) => b.vsTeam - a.vsTeam)[0];
+      if (best && best.vsTeam >= 1.05) good.push(`Mejor del turno: ${best.name} (${best.id}) en ${PROCS[best.primary].toLowerCase()}, al ${pct(best.vsTeam)} de la media de su equipo.`);
+      const low = people.filter((e) => e.flag === "low"), qual = people.filter((e) => e.flag === "quality");
+      if (low.length) bad.push(`${low.length} persona${low.length > 1 ? "s" : ""} por debajo del 90% de su equipo: ${low.map((e) => `${e.name} (${e.id})`).join(", ")}${low.filter((e) => e.tenure < 6).length * 2 > low.length ? ". La mayoría lleva menos de 6 meses" : ""}.`);
+      if (qual.length) bad.push(`Missort por encima del 0,6% en ${qual.map((e) => `${e.name} (${e.id}, ${pct(e.missortRate, 2)})`).join(", ")}: conviene repasar el stow.`);
+    }
     for (const ev of S.plan.events) {
       if (ev.type === "conveyor" && ev.state !== "pending") bad.push(`El conveyor estuvo parado ${ev.minutes} min desde las ${clock(ev.at)}.`);
     }
     for (const pt of S.plan.trucks) if (pt.eta !== pt.at) bad.push(`El camión ${pt.id} llegó ${pt.delay} min tarde (${clock(pt.eta)} en vez de ${clock(pt.at)}).`);
 
     const cycle = m.cycle.map((c) => ({ name: CYCLE[c.key], min: c.min }));
-    return { scenario: sc ? sc.name : "Turno", seed: sc ? sc.seed : null, over: S.over, now: clock(S.t), kpis, procs, waves, cycle, quality: q, good, bad, clock };
+    return { scenario: sc ? sc.name : "Turno", seed: sc ? sc.seed : null, over: S.over, now: clock(S.t), kpis, procs, waves, cycle, quality: q, good, bad, clock, people };
   }
 
   // CSV para Excel en español: separador ";" y coma decimal

@@ -36,6 +36,11 @@
     </div>
   </header>
 
+  <nav class="ds-tabs" role="tablist" aria-label="Vistas">
+    <button role="tab" data-view="station" aria-selected="true">Estación</button>
+    <button role="tab" data-view="crew" aria-selected="false">Plantilla <span class="ds-tab-count" id="ds-crew-count"></span></button>
+  </nav>
+
   <main class="ds-main">
     <section class="ds-stage" aria-label="Mapa de la estación">
       <div class="ds-controls ds-scenario-bar">
@@ -149,6 +154,26 @@
     </aside>
   </main>
 
+  <section class="ds-crew" id="ds-crew" hidden aria-label="Plantilla del turno">
+    <div class="ds-crew-head">
+      <div>
+        <p class="ds-eyebrow" id="ds-crew-clock"></p>
+        <h2>Plantilla del turno</h2>
+        <p class="ds-hint">Cada persona con su ID, dónde está ahora y cómo va. La UPH es por hora fichada; "vs equipo" la compara con la media de su proceso en este turno. IDs y nombres inventados.</p>
+      </div>
+      <div class="ds-crew-actions">
+        <button class="ds-btn" id="ds-crew-pause">❚❚ Pausa</button>
+        <button class="ds-btn ds-btn--ghost" id="ds-crew-csv">Descargar CSV</button>
+      </div>
+    </div>
+    <div class="ds-kpis ds-crew-kpis" id="ds-crew-kpis"></div>
+    <div class="ds-crew-filters" id="ds-crew-filters"></div>
+    <div class="ds-crew-body">
+      <div class="ds-card ds-crew-table"><table id="ds-crew-table"></table></div>
+      <aside class="ds-card ds-crew-detail" id="ds-crew-detail" aria-live="polite"></aside>
+    </div>
+  </section>
+
   <footer class="ds-foot">
     Proyecto de <a href="https://jorgeoliver7.github.io/Portfolio-Website/">Jorge Acedo</a>. Estación genérica inspirada en mi experiencia en logística de última milla; ritmos, rutas y paquetes son sintéticos.
     <a href="https://github.com/jorgeoliver7/ds-flow">Código</a>
@@ -164,6 +189,7 @@
   </dialog>
 
   <script src="layout.js"></script>
+  <script src="crew.js"></script>
   <script src="engine.js"></script>
   <script src="scenarios.js"></script>
   <script src="report.js"></script>
@@ -171,5 +197,6 @@
   <script src="charts.js"></script>
   <script src="render.js"></script>
   <script src="ui.js"></script>
+  <script src="crewui.js"></script>
 </body>
 </html>

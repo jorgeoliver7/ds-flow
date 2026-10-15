@@ -2,6 +2,7 @@
 // así que se puede ejecutar y probar en Node (ver test/).
 (function (root) {
   "use strict";
+  const DSCrew = typeof module !== "undefined" && module.exports ? require("./crew.js") : root.DSCrew;
 
   // Generador pseudoaleatorio con semilla (mulberry32): la misma semilla da la misma partida
   function rng(seed) {
@@ -165,6 +166,17 @@
     S.plan.pickStart = Math.min(...S.plan.waves.map((w) => w.at)) - SH.pickLead;
     S.plan.end = Math.max(...S.plan.waves.map((w) => w.deadline + SH.maxWait));
 
+    // Plantilla con nombre: quién está en cada proceso (opts.crew = false la desactiva)
+    const crew = DSCrew && opts.crew !== false ? DSCrew.create(L, S, { seed: opts.seed }) : null;
+    S.crew = crew;
+    const by = (who) => (who ? ` por ${who.name} (${who.id})` : "");
+    const PNAME = { receive: "la zona de carros", induct: "inducción", stow: "stow", pick: "pick", ps: "problem solve" };
+    // los cambios de plantilla (planificador, recomendaciones) se reflejan en quién trabaja dónde
+    function syncCrew() {
+      if (!crew) return;
+      for (const c of crew.sync()) log(c.from && c.to ? `${c.name} (${c.id}) pasa de ${PNAME[c.from]} a ${PNAME[c.to]}` : c.to ? `${c.name} (${c.id}) entra en ${PNAME[c.to]}` : `${c.name} (${c.id}) sale de ${PNAME[c.from]}`);
+    }
+
     // Zona de carros: un carril por grupo y tamaño
     const groupOfAisle = (ai) => R.groups.findIndex((g) => g.aisles.includes(ai));
     S.lanes = [];
@@ -181,7 +193,9 @@
       for (const l of S.lanes) { if (l.open) n += l.open.items.length; for (const c of l.closed) n += c.items.length; }
       return n;
     }
-    const rate = (base, key, cfg) => ((base * S.staff[key]) / cfg.staff) * (S.eff[key] || 1);
+    // rendimiento del momento: el del turno (S.eff) por el de las personas que hay en ese proceso
+    const pf = (key) => (S.eff[key] || 1) * (crew ? crew.factor(key) : 1);
+    const rate = (base, key, cfg) => ((base * S.staff[key]) / cfg.staff) * pf(key);
 
     // Contadores por minuto y por hora para los ritmos reales
     function count(key, n) {
@@ -190,6 +204,7 @@
       const h = Math.floor(S.t / 60), H = S.hourly[h] || (S.hourly[h] = { stow: 0, induct: 0, pick: 0, load: 0, receive: 0 });
       H[key] = (H[key] || 0) + (n || 1);
       S.totals[key] = (S.totals[key] || 0) + (n || 1);
+      return crew ? crew.work(key, n) : null;
     }
     // Paquetes por hora de un proceso en la última hora (o lo que va de turno)
     function hourRate(key) {
@@ -258,12 +273,12 @@
           if (!p.stowedOnce) { p.stowedOnce = true; S.unsorted--; }
           br.bump = hooks.now();
           hooks.fx("stow", { route: br });
-          if (br !== r) { hist(p, `Stow por error en la saca ${br.code} (su ruta es ${r.code})`); break; }
+          if (br !== r) { hist(p, `Stow por error en la saca ${br.code}${by(p.stowBy)} (su ruta es ${r.code})`); break; }
           S.sorted++; r.upstream--;
           p.stowAt = S.t; if (p.inductAt != null) cycAdd("inductStow", S.t - p.inductAt);
           if (r.dispatched) hist(p, `Llega tarde: la furgoneta de ${r.code} ya salió (rollover)`);
           S.dockToStow.push(S.t - p.unloadedAt); trim(S.dockToStow, 120);
-          hist(p, `Stow en la saca ${r.code} · pasillo ${ST.aisles[r.aisle].id}`);
+          hist(p, `Stow en la saca ${r.code}${by(p.stowBy)} · pasillo ${ST.aisles[r.aisle].id}`);
           break;
         }
         case "ps": p.where = "ps"; p.psAt = S.t; S.psQ.push(p); break;
@@ -392,6 +407,7 @@
     // ── Paso de simulación (dt en minutos simulados) ──────
     function step(dt) {
       S.t += dt;
+      syncCrew();
 
       // Camiones del plan: atracan a su hora si hay muelle libre; si no, esperan
       if (S.auto) for (const pt of S.plan.trucks) {
@@ -441,7 +457,7 @@
         coming += cart.items.length;
       }
       for (const m of S.moves) {
-        m.p += (dt * S.eff.receive) / R.moveMinutes;
+        m.p += (dt * pf("receive")) / R.moveMinutes;
         if (m.p >= 1) { for (const p of m.cart.items) { p.where = "induct"; S.inductQ.push(p); } count("receive", m.cart.items.length); }
       }
       S.moves = S.moves.filter((m) => m.p < 1);
@@ -454,8 +470,9 @@
         const p = S.inductQ.shift(), r = S.routes[p.route - 1], a = ST.aisles[r.aisle];
         if (p.issue !== "noLabel" && rand() < Q.noLabel) { count("induct"); toPS(p, "noLabel", { x: I.x + I.w / 2, y: I.y + I.h - 22 }); continue; }
         p.sorted = true;
-        hist(p, `Inducido · ruta ${r.code} → pasillo ${a.id}`);
-        count("induct"); p.inductAt = S.t; cycAdd("dockInduct", S.t - p.unloadedAt);
+        const who = count("induct");
+        hist(p, `Inducido${by(who)} · ruta ${r.code} → pasillo ${a.id}`);
+        p.inductAt = S.t; cycAdd("dockInduct", S.t - p.unloadedAt);
         send(p, [{ x: CV.x, y: I.y + I.h - 10 }, { x: CV.x, y: geo.beltY(a) }, { x: ST.x + 8, y: geo.beltY(a) }], "aisle", { belt: true });
       }
 
@@ -467,14 +484,18 @@
         const share = waiting ? a.queue.length / waiting : 1 / S.aisles.length;
         a.acc = cap(a.acc, ((stowRateNow * share) / 60) * dt);
         while (a.acc >= 1 && a.queue.length) {
-          a.acc--; a.done++; count("stow");
+          a.acc--; a.done++;
+          let who = count("stow");
           const p = a.queue.shift(), r = S.routes[p.route - 1];
           // missort: acaba en la saca de al lado
           let br = r;
           if (!p.issue && rand() < Q.missort) {
             br = S.routes[r.j < ST.routesPerAisle - 1 ? r.n : r.n - 2];
             S.issues.missort++; p.missorted = true;
+            // el fallo se atribuye a un stower, con más probabilidad a quien es menos cuidadoso
+            if (crew) who = crew.missort();
           }
+          p.stowBy = who;
           const b = geo.bagCenter(br);
           send(p, [{ x: ST.x + 8, y: geo.beltY(a) }, { x: b.x, y: geo.beltY(a) }, b], "bag", { bag: br.n });
         }
@@ -503,12 +524,12 @@
         while (S.acc.pick >= 1 && queue.length) {
           const i = k++ % Math.min(queue.length, 2), r = queue[i];
           if (!toPick(r)) { queue.splice(i, 1); continue; }
-          S.acc.pick--; count("pick");
-          const p = r.bag.shift();
+          S.acc.pick--;
+          const who = count("pick"), p = r.bag.shift();
           const b = geo.bagCenter(r), c = geo.cartCenter(r);
           // el picker ve que el paquete no es de esta ruta (toPS lo vuelve a contar, de ahí el --)
           if (p.route !== r.n) { S.issues.missort--; toPS(p, "missort", b); continue; }
-          hist(p, `Pick de la saca de ${r.code}`);
+          hist(p, `Pick de la saca de ${r.code}${by(who)}`);
           send(p, [b, { x: ST.x + ST.w, y: b.y }, { x: P.x, y: c.y }, c], "cart");
         }
       }
@@ -564,8 +585,9 @@
       // Horas trabajadas y deriva de la productividad (cada 10 min)
       // el equipo de sort trabaja de noche (hasta acabar el sort) y el de pick desde la primera oleada
       const sortCrew = S.t >= S.plan.firstTruck - 15 && S.sortDoneAt == null, pickCrew = S.t >= S.plan.pickStart && !S.over;
-      const crew = { receive: sortCrew, induct: sortCrew, stow: sortCrew, pick: pickCrew, ps: sortCrew || pickCrew };
-      for (const k in crew) if (crew[k]) { S.procMin[k] = (S.procMin[k] || 0) + S.staff[k] * dt; S.laborMin += S.staff[k] * dt; }
+      const active = { receive: sortCrew, induct: sortCrew, stow: sortCrew, pick: pickCrew, ps: sortCrew || pickCrew };
+      for (const k in active) if (active[k]) { S.procMin[k] = (S.procMin[k] || 0) + S.staff[k] * dt; S.laborMin += S.staff[k] * dt; }
+      if (crew) crew.tick(active, dt);
       if (Math.floor(S.t / 10) !== Math.floor((S.t - dt) / 10)) {
         // vuelve poco a poco hacia el 97% (nadie rinde al 100% todo el turno) con algo de ruido
         for (const k in S.eff) S.eff[k] = Math.min(1.08, Math.max(0.85, S.eff[k] + (0.97 - S.eff[k]) * 0.25 + (rand() - 0.5) * 0.06));
@@ -606,7 +628,7 @@
     // Capacidad nominal de clasificación (paq/min): el más lento entre inducción y stow
     function sortCap(staff) {
       staff = staff || S.staff;
-      return Math.min((I.rate * staff.induct * S.eff.induct) / I.staff, (ST.rate * staff.stow * S.eff.stow) / ST.staff) / 60;
+      return Math.min((I.rate * staff.induct * pf("induct")) / I.staff, (ST.rate * staff.stow * pf("stow")) / ST.staff) / 60;
     }
 
     // Hora prevista de fin del sort con el ritmo nominal de la plantilla.
@@ -710,7 +732,7 @@
     function waveForecast(staff) {
       staff = staff || S.staff;
       const sortEnd = forecast(staff === S.staff ? null : staff).sortEnd;
-      const pickCap = ((P.rate * staff.pick * S.eff.pick) / P.staff) / 60;
+      const pickCap = ((P.rate * staff.pick * pf("pick")) / P.staff) / 60;
       const tw = S.routes.reduce((s, r) => s + r.weight, 0);
       const future = S.plan.trucks.filter((x) => x.state === "pending").reduce((s, x) => s + x.units, 0) + S.trucks.reduce((s, t) => s + t.units, 0);
       let cursor = S.t;

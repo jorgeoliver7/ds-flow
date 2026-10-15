@@ -15,7 +15,8 @@ Forma parte del [portfolio de Jorge Acedo](https://jorgeoliver7.github.io/Portfo
 3. **Sigue la barra del turno**: camiones del plan (▼), corte del sort, oleadas de salida y el rombo con la hora prevista de fin del sort, en verde si llega al corte y en rojo si no.
 4. **Prueba el planificador** en "Procesos y plantilla": mueve personas con − y + y verás la nueva hora de fin y las rutas que saldrían tarde antes de aplicar el cambio. Debajo está la **plantilla mínima** para llegar al corte con 15 min de margen y sacar todas las oleadas; "Probar" la carga en el planificador.
 5. **Sigue las recomendaciones**: durante el turno la app avisa como lo haría un responsable de turno ("Mueve 1 de inducción a stow: el sort acabaría a las 05:52 en vez de a las 06:23"). Se aplican con un clic y quedan en la actividad.
-6. **Al acabar se abre el informe** con lo que salió bien y lo que hay que mejorar, y compara la plantilla con la que se empezó con la mínima para ese volumen. Se puede descargar en CSV o guardar como PDF.
+6. **Mira la pestaña "Plantilla"**: cada persona del turno con un ID y un nombre inventados, su equipo (noche, mañana o tarde), dónde está ahora, horas, paquetes, UPH, % del objetivo, comparación con la media de su proceso y missorts. Marca a los mejores y a quien necesita seguimiento, permite mover a alguien de proceso y se descarga en CSV.
+7. **Al acabar se abre el informe** con lo que salió bien y lo que hay que mejorar, y compara la plantilla con la que se empezó con la mínima para ese volumen. Se puede descargar en CSV o guardar como PDF.
 
 ![Informe de fin de turno con falta de personal](docs/informe.jpg)
 
@@ -38,9 +39,12 @@ Forma parte del [portfolio de Jorge Acedo](https://jorgeoliver7.github.io/Portfo
 | DPMO | Defectos (dañados, sin etiqueta y missorts) por millón de paquetes recibidos. |
 | Problem solve | Paquetes en revisión y su tiempo medio de resolución. Los dañados sin arreglo se dan de baja. |
 | Plantilla mínima | Personas por proceso con las que el sort acaba 15 min antes del corte y salen todas las oleadas. Se calcula con un modelo de flujo: los camiones entran al ritmo de descarga y el sort los vacía al 95% de su ritmo nominal, que es lo que rinde de media una noche. |
+| vs equipo | UPH de una persona frente a la media de las demás de su proceso en el mismo turno. Como la UPH es por hora fichada, las esperas bajan a todo el equipo; compararse con el equipo aísla el ritmo de cada uno. Por debajo del 90% sale como aviso, desde el 108% como top. |
 | Tiempo de ciclo | Minutos medios de cada tramo: muelle → inducción → saca → pick → salida. |
 
 ![Planificador de plantilla](docs/planificador.jpg)
+
+![Pestaña de plantilla](docs/plantilla.jpg)
 
 ## Importar una noche concreta
 
@@ -58,7 +62,7 @@ El archivo **se lee en el navegador y no se sube a ningún sitio**. El `.gitigno
 
 ## Datos
 
-La estación es genérica. Muelles, pasillos, rutas, horarios, ritmos y volúmenes son cifras inventadas o redondeadas, y se ajustan en [`layout.js`](layout.js). No contiene datos internos de ninguna empresa.
+La estación es genérica. Muelles, pasillos, rutas, horarios, ritmos y volúmenes son cifras inventadas o redondeadas, y se ajustan en [`layout.js`](layout.js). Las personas de la plantilla, sus IDs y sus nombres también son inventados. No contiene datos internos de ninguna empresa.
 
 ## Stack
 
@@ -70,6 +74,8 @@ JavaScript sin dependencias y Canvas. Sin build: es una página estática.
 | `ds-flow.css` | Estilos, tema claro y oscuro, modo presentación e impresión del informe |
 | `layout.js` | Geometría de la estación, objetivos de UPH, calidad y plan del turno |
 | `engine.js` | Motor de la simulación y métricas, sin DOM (se prueba en Node) |
+| `crew.js` | Plantilla con nombre: personas, habilidades, quién trabaja en cada proceso y sus métricas |
+| `crewui.js` | Pestaña de plantilla |
 | `scenarios.js` | Escenarios de la demo, cada uno con su semilla |
 | `report.js` | Informe de fin de turno y exportación a CSV |
 | `importcsv.js` | Lectura del CSV de una noche |
