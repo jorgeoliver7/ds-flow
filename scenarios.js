@@ -27,9 +27,9 @@
     },
     {
       id: "retraso", name: "Camión retrasado", seed: 45,
-      desc: "El último camión llega hora y media tarde y el conveyor se para 20 minutos.",
+      desc: "El último camión llega una hora tarde y el conveyor se para 20 minutos.",
       shift: (sh) => {
-        sh.events = [{ type: "conveyor", at: "01:20", minutes: 20 }, { type: "truckLate", truck: "T-12", minutes: 90 }];
+        sh.events = [{ type: "conveyor", at: "02:20", minutes: 20 }, { type: "truckLate", truck: "T-12", minutes: 60 }];
         return sh;
       },
     },
@@ -37,7 +37,7 @@
       id: "pm", name: "Tarde (PM, same day)", seed: 58,
       desc: "Turno de tarde: unos 500 paquetes de same day en 8 rutas que salen a las 18:00, con un equipo pequeño.",
       shift: (sh) => ({
-        ...sh, start: "14:00",
+        ...sh, start: "14:00", sortStart: null, nightEnd: null, breaks: [],
         trucks: [{ at: "14:30", units: 300 }, { at: "15:30", units: 200 }],
         sortCutoff: "16:45", events: [],
         waves: [{ at: "18:00", aisles: ["A"] }],

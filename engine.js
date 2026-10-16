@@ -73,11 +73,13 @@
     return tr.pts[tr.pts.length - 1];
   }
 
-  // "05:30" → minutos desde el inicio del turno; lo que cae antes del inicio es del día siguiente
+  // "05:30" → minutos desde el inicio del turno. Hasta 2 h antes del inicio es el mismo turno (un camión que
+  // llega antes de que entre el equipo); lo demás que cae antes del inicio es del día siguiente
   function toShift(hhmm, shiftStart) {
     const [h, m] = String(hhmm).split(":").map(Number);
     let t = h * 60 + m - shiftStart;
     if (t < -120) t += 1440;
+    else if (t >= 1440 - 120) t -= 1440;
     return t;
   }
 
@@ -88,7 +90,7 @@
   // Rendimiento real medio frente al nominal, medido con la simulación: el sort pierde algo en esperas y en
   // el reparto entre pasillos, y el pick en cambiar de ruta y de carro.
   // Inducción y carros pierden más porque trabajan a golpes, según llegan los carros.
-  const FLOW = { receive: 0.92, induct: 0.9, stow: 0.95, ps: 1 }, PICK_FLOW = 0.95;
+  const FLOW = { receive: 0.88, induct: 0.87, stow: 0.95, ps: 1 }, PICK_FLOW = 0.95;
   const trim = (a, n) => { if (a.length > n) a.splice(0, a.length - n); };
 
   // opts: { seed, shift (sustituye a L.shift), staff (plantilla inicial), routeWeights (volumen por ruta), hooks: { log(msg, kind), fx(kind, data), now() } }
@@ -183,6 +185,11 @@
     S.plan.firstWave = Math.min(...S.plan.waves.map((w) => w.at));
     S.plan.pickStart = S.plan.firstWave - SH.pickLead;
     S.plan.end = Math.max(...S.plan.waves.map((w) => w.deadline + SH.maxWait));
+    // Horario del equipo de noche: entra a sortStart y para en los descansos (todo el sort a la vez).
+    // Sin horario en el plan, el equipo llega un cuarto de hora antes del primer camión y no para.
+    S.plan.sortStart = SH.sortStart ? at(SH.sortStart) : S.plan.firstTruck - 15;
+    S.plan.nightEnd = SH.nightEnd ? at(SH.nightEnd) : null;
+    S.plan.breaks = (SH.breaks || []).map((b) => ({ from: at(b.at), to: at(b.at) + b.minutes, minutes: b.minutes }));
 
     // Plantilla con nombre: quién está en cada proceso (opts.crew = false la desactiva)
     const crew = DSCrew && opts.crew !== false ? DSCrew.create(L, S, { seed: opts.seed }) : null;
@@ -225,8 +232,11 @@
       return crew ? crew.work(key, n) : null;
     }
     // Paquetes por hora de un proceso en la última hora (o lo que va de turno)
+    // (en el sort sin contar el descanso: esos minutos no se trabaja)
     function hourRate(key) {
-      const f = S.flow[key], now = Math.floor(S.t), span = Math.min(60, Math.max(S.t - Math.max(S.plan.firstTruck, 0), 1));
+      const f = S.flow[key], now = Math.floor(S.t), from = Math.max(S.plan.firstTruck, 0);
+      const sortKey = key === "receive" || key === "induct" || key === "stow" || key === "ps";
+      const span = sortKey ? Math.max(workBetween(Math.max(S.t - 60, from), S.t), 1) : Math.min(60, Math.max(S.t - from, 1));
       let n = 0;
       for (let m = now; m > now - 60; m--) n += f[m] || 0;
       return (n / Math.min(span, 60)) * 60;
@@ -463,6 +473,14 @@
       dt = dt || DT;
       S.t += dt; S.steps++;
       syncCrew();
+      // descanso o antes de entrar: el equipo de noche no descarga, no mueve carros, no induce ni hace stow
+      const idle = sortIdle(S.t), brk = onBreak(S.t);
+      if (brk !== !!S.onBreak) {
+        S.onBreak = brk;
+        const b = S.plan.breaks.find((x) => S.t >= x.from - 1 && S.t <= x.to + 1);
+        if (brk) log(`Descanso del equipo de noche hasta las ${clock(L, b ? b.to : S.t)}: el sort se para`, "warn");
+        else log("Fin del descanso: el sort sigue", "out");
+      }
 
       // Camiones del plan: llegan a la puerta a su hora, pasan el check-in y atracan si hay muelle libre
       if (S.auto) for (const pt of S.plan.trucks) {
@@ -478,6 +496,7 @@
       for (const t of S.trucks) {
         if (t.state === "arriving") { t.p += dt / VEH; if (t.p >= 1) { t.state = "unloading"; t.p = 1; } }
         else if (t.state === "unloading") {
+          if (idle) continue;
           // sin dock marshal nadie ordena muelles ni carros vacíos: la descarga va más lenta
           t.acc += (D.unloadRate / 60) * dt * (S.staff.dock ? 1 : DM.unloadNoMarshal);
           while (t.acc >= 1 && t.units > 0) {
@@ -499,7 +518,7 @@
       // se lleva otro carro si inducción no va a tener trabajo para cuando llegue (lo que espera + lo que ya va de camino)
       const buffer = Math.max(40, (rate(I.rate, "induct", I) / 60) * (R.moveMinutes + 1.5));
       let coming = S.moves.reduce((n, m) => n + m.cart.items.length, 0);
-      while (S.moves.length < S.staff.receive && S.inductQ.length + coming < buffer) {
+      while (!idle && S.moves.length < S.staff.receive && S.inductQ.length + coming < buffer) {
         let best = null;
         for (const l of S.lanes) if (l.closed.length && (!best || l.closed[0].closedAt < best.closed[0].closedAt)) best = l;
         if (!best) break;
@@ -512,6 +531,7 @@
         coming += cart.items.length;
       }
       for (const m of S.moves) {
+        if (idle) break;
         m.p += (dt * pf("receive")) / R.moveMinutes;
         if (m.p >= 1) { for (const p of m.cart.items) { p.where = "induct"; S.inductQ.push(p); } count("receive", m.cart.items.length); }
       }
@@ -519,7 +539,7 @@
 
       // Inducción → conveyor → pasillo
       S.acc.induct = cap(S.acc.induct, (rate(I.rate, "induct", I) / 60) * dt);
-      if (S.conveyorDown) S.acc.induct = 0;
+      if (S.conveyorDown || idle) S.acc.induct = 0;
       while (S.acc.induct >= 1 && S.inductQ.length) {
         S.acc.induct--;
         const p = S.inductQ.shift(), r = S.routes[p.route - 1], a = ST.aisles[r.aisle];
@@ -537,7 +557,7 @@
       const stowRateNow = rate(ST.rate, "stow", ST);
       for (const a of S.aisles) {
         const share = waiting ? a.queue.length / waiting : 1 / S.aisles.length;
-        a.acc = cap(a.acc, ((stowRateNow * share) / 60) * dt);
+        a.acc = idle ? 0 : cap(a.acc, ((stowRateNow * share) / 60) * dt);
         while (a.acc >= 1 && a.queue.length) {
           a.acc--; a.done++;
           let who = count("stow");
@@ -615,7 +635,7 @@
       }
 
       // Problem solve
-      S.psAcc = cap(S.psAcc, (rate(PS.uph * PS.staff, "ps", PS) / 60) * dt);
+      S.psAcc = brk ? 0 : cap(S.psAcc, (rate(PS.uph * PS.staff, "ps", PS) / 60) * dt);
       // cada incidencia lleva unos minutos de revisión (reetiquetar, reembalar, buscar su ruta)
       while (S.psAcc >= 1 && S.psQ.length && S.t - S.psQ[0].psAt >= PS.handleMin) { S.psAcc--; resolvePS(S.psQ.shift()); }
       if (!S.psQ.length) S.psAcc = Math.min(S.psAcc, 1);
@@ -640,9 +660,10 @@
 
       // Horas trabajadas y deriva de la productividad (cada 10 min)
       // el equipo de sort trabaja de noche (hasta acabar el sort) y el de pick desde la primera oleada
-      const sortCrew = S.t >= S.plan.firstTruck - 15 && S.sortDoneAt == null, pickCrew = S.t >= S.plan.pickStart && !S.over;
+      // el descanso no cuenta como hora trabajada
+      const sortCrew = S.t >= S.plan.sortStart && S.sortDoneAt == null && !brk, pickCrew = S.t >= S.plan.pickStart && !S.over;
       const on = marshalsOn();
-      const active = { receive: sortCrew, induct: sortCrew, stow: sortCrew, pick: pickCrew, ps: sortCrew || pickCrew, dock: on.dock, yard: on.yard };
+      const active = { receive: sortCrew, induct: sortCrew, stow: sortCrew, pick: pickCrew, ps: sortCrew || (pickCrew && !brk), dock: on.dock, yard: on.yard };
       for (const k of ["dock", "yard"]) if (on[k] && !S.staff[k]) S.noMarshal[k] += dt;
       // el dock marshal acaba cuando ha atracado y se ha descargado el último camión del plan
       if (S.dockDoneAt == null && S.t > S.plan.firstTruck && S.plan.trucks.every((x) => x.state === "docked") && !S.gate.length && !S.trucks.some((t) => t.units > 0)) S.dockDoneAt = S.t;
@@ -676,7 +697,7 @@
     // Cuándo hace falta cada marshal: el de dock mientras llegan y se descargan los camiones del plan,
     // el de yard desde un rato antes de la primera oleada hasta que sale la última furgoneta
     function marshalsOn() {
-      return { dock: S.t >= S.plan.firstTruck - 15 && S.dockDoneAt == null, yard: S.t >= S.plan.firstWave - YM.before && !S.over };
+      return { dock: S.t >= S.plan.sortStart && S.dockDoneAt == null, yard: S.t >= S.plan.firstWave - YM.before && !S.over };
     }
 
     // Paquetes de una ruta que van de camino a su carro de pick
@@ -685,9 +706,22 @@
       return false;
     }
 
-    // Plan de clasificación acumulado: lineal desde el primer camión hasta el corte
+    // Descansos del equipo de noche
+    const onBreak = (t) => S.plan.breaks.some((b) => t >= b.from && t < b.to);
+    // El sort no avanza antes de que entre el equipo de noche ni durante su descanso
+    const sortIdle = (t) => t < S.plan.sortStart || onBreak(t);
+    // Minutos de trabajo entre a y b, sin los descansos
+    function workBetween(a, b) {
+      let m = Math.max(0, b - a);
+      for (const br of S.plan.breaks) m -= Math.max(0, Math.min(b, br.to) - Math.max(a, br.from));
+      return m;
+    }
+
+    // Plan de clasificación acumulado: lineal en minutos de trabajo desde que empieza el sort hasta el corte
+    // (plano durante el descanso)
     function planAt(t) {
-      const f = (t - S.plan.firstTruck) / (S.plan.cutoff - S.plan.firstTruck);
+      const s0 = Math.max(S.plan.firstTruck, S.plan.sortStart);
+      const f = workBetween(s0, t) / workBetween(s0, S.plan.cutoff);
       return Math.round(S.plan.volume * Math.min(Math.max(f, 0), 1));
     }
 
@@ -774,8 +808,11 @@
       const cap = capOverride || sortCap(staff, f);
       let backlog = S.unsorted, t = S.t, last = S.t;
       while (list.some((x) => x.left > 0) || backlog > 0.5) {
-        for (const x of list) if (x.left > 0 && x.from <= t) { const n = Math.min(x.left, fd.unload); x.left -= n; backlog += n; last = t + 1; }
-        backlog = Math.max(0, backlog - cap);
+        // antes de que entre el equipo y en el descanso no se descarga ni se clasifica
+        if (!sortIdle(t)) {
+          for (const x of list) if (x.left > 0 && x.from <= t) { const n = Math.min(x.left, fd.unload); x.left -= n; backlog += n; last = t + 1; }
+          backlog = Math.max(0, backlog - cap);
+        }
         t += 1;
         if (t - S.t > 1440) break;
       }
@@ -970,7 +1007,7 @@
       const f = factors(staff), cur = sameStaff(staff, S.staff);
       const fc = forecast(cur ? null : staff, null, f), ws = waveForecast(staff, f);
       const end = Math.max(...ws.map((w) => w.depart)), sortEnd = fc.done ? S.t : fc.sortEnd;
-      const span = (a, b) => Math.max(0, b - Math.max(a, S.t)), s0 = S.plan.firstTruck - 15;
+      const span = (a, b) => workBetween(Math.max(a, S.t), b), s0 = S.plan.sortStart;
       const dockEnd = S.dockDoneAt != null || fc.done ? S.t : fc.lastUnload;
       const m = { receive: span(s0, sortEnd), induct: span(s0, sortEnd), stow: span(s0, sortEnd), ps: span(s0, end), pick: span(S.plan.pickStart, end),
         dock: span(s0, dockEnd), yard: span(S.plan.firstWave - YM.before, end) };
@@ -1089,7 +1126,7 @@
 
     return {
       S, L, SH, geo, posOf, step, freePad, laneOf, stagingCount, rate, loads, stowRate, inPlantCount,
-      toPick, forecast, metrics, planAt, sortCap, at, waveForecast, hourRate, log, crewNeeded, advise,
+      toPick, forecast, metrics, planAt, onBreak, workBetween, sortCap, at, waveForecast, hourRate, log, crewNeeded, advise,
       capacity, bottleneck, factors, laborLeft, whatIf, marshalsOn, summary, apply, spec, pf, VEH,
       // acciones (quedan apuntadas para poder repetir la partida)
       addTruck: () => act({ type: "truck" }),

@@ -141,7 +141,7 @@ test("cada escenario lleva a un informe distinto y coherente", () => {
   assert.ok(out.pico.S.plan.volume > out.normal.S.plan.volume * 1.3);
   assert.ok(out.personal.S.sortDoneAt > out.personal.S.plan.cutoff);
   assert.ok(out.personal.r.bad.some((b) => b.includes("después del corte")));
-  assert.ok(out.retraso.r.bad.some((b) => b.includes("T-12 llegó 90 min tarde")));
+  assert.ok(out.retraso.r.bad.some((b) => b.includes("T-12 llegó 60 min tarde")));
   // turno de tarde: poco volumen, otra hora de inicio y solo las rutas con paquetes
   assert.equal(out.pm.S.plan.volume, 500);
   assert.equal(DSEngine.clock({ shiftStart: 14 * 60 }, 0), "14:00");
@@ -157,7 +157,7 @@ test("importar la plantilla CSV cambia la partida", () => {
   const res = I.parse(fs.readFileSync(path.join(__dirname, "..", "ejemplo-turno.csv"), "utf8"), L);
   assert.ok(res.ok, res.errors.join(", "));
   assert.equal(res.shift.trucks.length, 12);
-  assert.equal(res.shift.trucks[0].at, "23:00");
+  assert.equal(res.shift.trucks[0].at, "01:00");
   assert.deepEqual(res.shift.waves.map((w) => w.at), ["06:20", "06:35", "06:50", "07:05", "07:20", "07:35"]);
   assert.equal(res.weights.length, 120);
   const E = DSEngine.create(L, { seed: 7, shift: res.shift, routeWeights: res.weights });
@@ -185,20 +185,21 @@ test("la plantilla mínima llega al corte y saca todas las oleadas", () => {
   const SC = require("../scenarios.js");
   const o = SC.options(L, "normal"), cp = DSEngine.create(L, o).S.crewPlan;
   assert.ok(cp.reachable);
-  assert.ok(cp.sort >= 20 && cp.sort <= 28, `sort ${cp.sort}`);
+  assert.ok(cp.sort >= 24 && cp.sort <= 34, `sort ${cp.sort}`);
   const E = DSEngine.create(L, { ...o, staff: cp.staff });
   run(E, 900);
   assert.ok(E.S.sortDoneAt <= E.S.plan.cutoff, "acaba antes del corte");
   assert.equal(E.metrics().routesLate, 0);
-  // con dos personas menos en stow acaba bastante más tarde
-  const E2 = DSEngine.create(L, { ...o, staff: { ...cp.staff, stow: cp.staff.stow - 2 } });
+  // con tres personas menos en stow acaba bastante más tarde
+  const E2 = DSEngine.create(L, { ...o, staff: { ...cp.staff, stow: cp.staff.stow - 3 } });
   run(E2, 900);
   assert.ok(E2.S.sortDoneAt > E.S.sortDoneAt + 20);
 });
 
 test("la recomendación en directo mueve gente al cuello de botella y adelanta el sort", () => {
   const SC = require("../scenarios.js");
-  const o = SC.options(L, "personal");
+  // gente de sobra en inducción y corta en stow
+  const o = { ...SC.options(L, "normal"), staff: { induct: 7, stow: 15 } };
   const E = DSEngine.create(L, o);
   while (E.S.t < 30) E.step(0.1);
   const adv = E.advise();
@@ -257,7 +258,7 @@ test("simular el resto del turno repite la partida exacta hasta ahora, con las a
 test("la estimación al instante se acerca a la simulación completa", () => {
   const SC = require("../scenarios.js");
   const o = SC.options(L, "normal");
-  for (const change of [{ receive: 2 }, { induct: 4 }, { stow: 13 }]) {
+  for (const change of [{ receive: 3 }, { induct: 4 }, { stow: 15 }]) {
     const E = DSEngine.create(L, o);
     while (E.S.t < 30) E.step();
     const draft = { ...E.S.staff, ...change }, w = E.whatIf(draft);
