@@ -150,6 +150,10 @@ const DS_LAYOUT = {
     ],
   },
 
+  // High value: paquetes de valor alto (electrónica, joyería...) que se siguen uno a uno durante el turno.
+  // Proporción y valores inventados.
+  highValue: { share: 0.004, min: 300, max: 2500 },
+
   // Municipios por ruta para la ficha del paquete
   towns: ["Cádiz", "San Fernando", "Chiclana", "Puerto Real", "El Puerto", "Jerez", "Rota", "Conil"],
 };

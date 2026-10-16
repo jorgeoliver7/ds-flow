@@ -21,7 +21,7 @@
         raw: g("--ds-raw"), belt: g("--ds-belt"), truck: g("--ds-truck"), van: g("--ds-van"),
         ok: g("--ds-ok"), warn: g("--ds-warn"), bad: g("--ds-bad"), sel: g("--ds-sel"),
         aisle: AISLE_COLORS.map(g),
-        box: g("--ds-box"), tape: g("--ds-tape"), shadow: g("--ds-shadow"), wheel: g("--ds-wheel"),
+        box: g("--ds-box"), hv: g("--ds-hv") || g("--ds-warn"), tape: g("--ds-tape"), shadow: g("--ds-shadow"), wheel: g("--ds-wheel"),
         sans: g("--ds-font-sans"), mono: g("--ds-font-mono"),
       };
       bgDirty = true;
@@ -408,6 +408,8 @@
         ctx.fillStyle = C.shadow; rr(-4.5, -3, 10, 9, 2); ctx.fill();
         ctx.fillStyle = C.box; rr(-5, -5, 10, 9, 2); ctx.fill();
         ctx.fillStyle = col; ctx.fillRect(-1.2, -5, 2.4, 9);
+        // high value: marco dorado para verlo de un vistazo
+        if (pkg.hv) { ctx.strokeStyle = C.hv; ctx.lineWidth = 1.6; rr(-6.5, -6.5, 13, 12, 3); ctx.stroke(); }
         ctx.restore();
       }
     }

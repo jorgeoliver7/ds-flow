@@ -100,6 +100,8 @@
     if (SH.start) { const [h, m] = SH.start.split(":").map(Number); L = { ...L, shiftStart: h * 60 + m }; }
     const hooks = Object.assign({ log() {}, fx() {}, now: () => 0 }, opts.hooks);
     const rand = rng(opts.seed == null ? 7 : opts.seed);
+    // los high value salen de su propio generador: marcarlos no cambia el resto de la partida
+    const hvRand = rng((opts.seed == null ? 7 : opts.seed) * 31 + 5), HV = L.highValue || { share: 0 };
     const D = L.docks, R = L.receive, I = L.induct, CV = L.conveyor, ST = L.stow, P = L.pick, Y = L.yard, PS = L.problem, Q = L.quality;
     // marshals: un plano sin ellos (p. ej. uno antiguo) funciona igual, con cero personas
     const DM = D.marshal || { staff: 0, checkInMin: 0, selfCheckInMin: 0, unloadNoMarshal: 1 };
@@ -136,6 +138,7 @@
       laborMin: 0,              // minutos-persona trabajados
       cyc: { dockInduct: [0, 0], inductStow: [0, 0], stowPick: [0, 0], pickOut: [0, 0] },
       events: [],
+      hv: [],                   // paquetes high value del turno, para seguirlos uno a uno
     };
 
     // Rutas: N por pasillo, con peso de volumen distinto para que unas se llenen antes
@@ -235,7 +238,7 @@
       trim(S.events, 40);
       hooks.log(msg, kind);
     }
-    function hist(p, msg) { p.hist.push({ t: S.t, msg }); }
+    function hist(p, msg) { p.hist.push({ t: S.t, msg }); p.seenAt = S.t; }
 
     const SIZES = [["Sobre", 0.3, "S"], ["Pequeño", 1.2, "S"], ["Mediano", 3.5, "M"], ["Oversize", 9, "O"]];
     function newPkg(truck) {
@@ -249,9 +252,13 @@
         truck: truck.id, sorted: false, where: "truck", hist: [], unloadedAt: S.t,
       };
       hist(p, `Descargado del camión ${truck.id} · muelle ${truck.dock + 1}`);
+      if (hvRand() < HV.share) {
+        p.hv = true; p.value = Math.round((HV.min + hvRand() ** 2 * (HV.max - HV.min)) / 5) * 5;
+        S.hv.push(p);
+      }
       S.pkgs.set(id, p);
       if (S.pkgs.size > 60000) {
-        for (const [k, v] of S.pkgs) { if (S.pkgs.size < 50000) break; if (v.where === "delivered" && k !== S.tracked) S.pkgs.delete(k); }
+        for (const [k, v] of S.pkgs) { if (S.pkgs.size < 50000) break; if (v.where === "delivered" && k !== S.tracked && !v.hv) S.pkgs.delete(k); }
       }
       return p;
     }

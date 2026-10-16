@@ -298,3 +298,17 @@ test("sin yard marshal en las oleadas las furgonetas salen más tarde", () => {
   const yardH = a.S.procMin.yard / 60;
   assert.ok(yardH > 1 && yardH < 3, `yard ${yardH} h`);
 });
+
+test("high value: se marcan unos pocos paquetes, sin cambiar la partida, y todos salen en su furgoneta", () => {
+  const SC = require("../scenarios.js");
+  const o = SC.options(L, "normal");
+  const E = shift(o), none = DSEngine.create({ ...L, highValue: { share: 0 } }, o);
+  run(none, 700);
+  const hv = E.S.hv;
+  assert.ok(hv.length > 50 && hv.length < 180, `${hv.length} high value`);
+  assert.ok(hv.every((p) => p.value >= L.highValue.min && p.value <= L.highValue.max));
+  assert.equal(none.S.hv.length, 0);
+  assert.equal(E.S.sortDoneAt, none.S.sortDoneAt, "marcarlos no cambia la partida");
+  assert.equal(E.S.dispatched, none.S.dispatched);
+  assert.ok(hv.every((p) => ["route", "delivered", "writtenoff"].includes(p.where)), "al final del turno no queda ninguno en la estación");
+});

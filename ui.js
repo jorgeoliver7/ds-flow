@@ -103,7 +103,8 @@
   canvas.addEventListener("click", (e) => {
     const h = V.hit(...V.local(e));
     if (h && h.kind === "pkg") { track(h.id); return; }
-    S.selected = h; renderDetail();
+    S.selected = h;
+    if (ctab !== "search") setCtab("search"); else renderDetail();
   });
   canvas.addEventListener("mousemove", (e) => { canvas.style.cursor = V.hit(...V.local(e)) ? "pointer" : "default"; });
 
@@ -111,8 +112,77 @@
     if (!S.pkgs.get(id)) { toast("No encuentro ese paquete"); return; }
     S.tracked = id; S.selected = { kind: "pkg", id };
     $("#ds-search").value = id;
-    renderDetail();
+    if (ctab !== "search") setCtab("search"); else renderDetail();
   }
+
+  // ── High Values ───────────────────────────────────────
+  // Cada paquete de valor alto del turno: dónde está ahora, desde cuándo y si hay que ir a buscarlo
+  let ctab = "search", hvFilter = "all";
+  function setCtab(t) {
+    ctab = t;
+    document.querySelectorAll("[data-ctab]").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.ctab === t)));
+    $("#ds-track-form").hidden = t !== "search"; $("#ds-detail").hidden = t !== "search"; $("#ds-hv").hidden = t !== "hv";
+    if (t === "hv") renderHV(); else renderDetail();
+  }
+  document.querySelectorAll("[data-ctab]").forEach((b) => b.addEventListener("click", () => setCtab(b.dataset.ctab)));
+
+  const HV_DEST = { receive: "Del muelle a la zona de carros", induct: "De camino a inducción", aisle: "En el conveyor", bag: "Entrando en su saca",
+    ps: "De camino a problem solve", cart: "Al carro de pick", van: "A la furgoneta" };
+  function hvWhere(p) {
+    const r = S.routes[p.route - 1];
+    switch (p.where) {
+      case "truck": return `Camión ${p.truck}`;
+      case "transit": return HV_DEST[p.tr && p.tr.dest] || "En movimiento";
+      case "staging": return `Carro ${p.cartId} · zona de carros`;
+      case "moving": return `Carro ${p.cartId} hacia inducción`;
+      case "induct": return "Cola de inducción";
+      case "aisle": return `Pasillo ${ST.aisles[r.aisle].id} · esperando stow`;
+      case "bag": { const b = S.routes[p.bag - 1]; return `Saca ${b.code} · pasillo ${ST.aisles[b.aisle].id}${b !== r ? " · no es la suya" : ""}`; }
+      case "ps": return "Problem solve";
+      case "cart": return `Carro de pick de ${r.code}`;
+      case "van": return `Furgoneta ${p.van} · plaza ${(S.vans.find((v) => v.id === p.van)?.pad ?? -1) + 1 || "—"}`;
+      case "route": return `En reparto · ${r.town}`;
+      case "delivered": return "Entregado";
+      case "writtenoff": return "Dado de baja";
+    }
+    return p.where;
+  }
+  // out: ya salió · ok: en el flujo · warn: incidencia o en la saca equivocada · bad: su furgoneta se fue sin él, o dado de baja
+  function hvState(p) {
+    if (p.where === "route" || p.where === "delivered") return "out";
+    if (p.where === "writtenoff" || S.routes[p.route - 1].dispatched) return "bad";
+    if (p.where === "ps" || (p.tr && p.tr.dest === "ps") || (p.where === "bag" && p.bag !== p.route)) return "warn";
+    return "ok";
+  }
+  const HV_ORDER = { bad: 0, warn: 1, ok: 2, out: 3 };
+  const HV_FILTERS = [["all", "Todos"], ["in", "En planta"], ["alert", "Con aviso"], ["out", "Ya salieron"]];
+  function renderHV() {
+    const el = $("#ds-hv"), all = S.hv.map((p) => ({ p, st: hvState(p) }));
+    if (!all.length) { el.innerHTML = `<p class="ds-hint">Los high value aparecen aquí en cuanto se descargan del camión: unos ${Math.round(S.plan.volume * (L.highValue?.share || 0))} esta noche.</p>`; return; }
+    const n = (f) => all.filter(f).length, value = all.reduce((s, x) => s + x.p.value, 0);
+    const pass = { all: () => true, in: (x) => x.st === "ok" || x.st === "warn", alert: (x) => x.st === "bad" || x.st === "warn", out: (x) => x.st === "out" }[hvFilter];
+    const list = all.filter(pass).sort((a, b) => HV_ORDER[a.st] - HV_ORDER[b.st] || (S.routes[a.p.route - 1].wave?.at ?? 0) - (S.routes[b.p.route - 1].wave?.at ?? 0) || b.p.value - a.p.value);
+    const alerts = n((x) => x.st === "bad" || x.st === "warn");
+    el.innerHTML = `<div class="ds-hv-sum">
+        <div><span>Del turno</span><strong>${all.length}</strong></div>
+        <div><span>En planta</span><strong>${n((x) => x.st === "ok" || x.st === "warn")}</strong></div>
+        <div><span>Salieron</span><strong>${n((x) => x.st === "out")}</strong></div>
+        <div><span>Con aviso</span><strong class="${alerts ? "is-bad" : ""}">${alerts}</strong></div></div>
+      <p class="ds-hint">${num(value)} € declarados en total. Pulsa uno para ver su historial y seguirlo en el mapa (marco dorado).</p>
+      <div class="ds-hv-filters">${HV_FILTERS.map(([k, l]) => `<button class="ds-chip${hvFilter === k ? " is-on" : ""}" data-hvf="${k}">${l}</button>`).join("")}</div>
+      <div class="ds-hv-list"><table><thead><tr><th>Paquete</th><th>Ruta</th><th>Dónde está</th></tr></thead><tbody>${list.map(({ p, st }) => {
+        const r = S.routes[p.route - 1], w = r.wave;
+        return `<tr data-hv="${p.id}"><td class="ds-mono">${p.id}<small>${num(p.value)} €</small></td>
+          <td class="ds-mono">${r.code}<small>${r.dispatched ? `salió ${clock(r.departAt)}` : w ? `sale ${clock(w.at)}` : "—"}</small></td>
+          <td><i class="ds-sem is-${st === "out" ? "idle" : st}"></i>${esc(hvWhere(p))}<small>${st === "bad" && p.where !== "writtenoff" ? "su furgoneta ya salió · " : ""}desde las ${clock(p.seenAt)}</small></td></tr>`;
+      }).join("") || `<tr><td colspan="3" class="ds-hint">Ninguno con este filtro.</td></tr>`}</tbody></table></div>`;
+  }
+  function onHV(e) {
+    const f = e.target.closest("[data-hvf]"); if (f) { hvFilter = f.dataset.hvf; renderHV(); return; }
+    const r = e.target.closest("tr[data-hv]"); if (r) { setCtab("search"); track(r.dataset.hv); }
+  }
+  $("#ds-hv").addEventListener("pointerdown", onHV);
+  $("#ds-hv").addEventListener("click", (e) => { if (e.detail === 0) onHV(e); });
 
   // ── Centro de control ─────────────────────────────────
   function toast(msg) {
@@ -157,6 +227,9 @@
     if (E.freePad() < 0) al.push(["warn", "Yard completo: no caben más furgonetas"]);
     if (m.routesLate) al.push(["warn", `${m.routesLate} ruta${m.routesLate > 1 ? "s salieron" : " salió"} tarde`]);
     if (S.over) al.unshift(["ok", `Turno terminado a las ${clock(S.endAt)}`]);
+    const hvLeft = S.hv.filter((p) => hvState(p) === "bad" && p.where !== "writtenoff").length;
+    if (hvLeft) al.unshift(["bad", `${hvLeft} high value se ${hvLeft > 1 ? "han quedado" : "ha quedado"} sin su furgoneta: búscalos en la pestaña High Values`]);
+    $("#ds-hv-count").textContent = S.hv.length;
     for (const p of m.processes) {
       const st = procStatus(p);
       if (st === "bad" && p.key !== "ps" && !p.marshal) al.push(["warn", `${p.name} rinde al ${Math.round((p.uph / p.target) * 100)}% del objetivo (${Math.round(p.uph)} de ${p.target} UPH)`]);
@@ -200,8 +273,8 @@
       const p = S.pkgs.get(s.id); if (!p) { S.selected = null; return renderDetail(); }
       const r = S.routes[p.route - 1];
       const ISSUE = { damaged: "Dañado", noLabel: "Etiqueta ilegible", missort: "Mal clasificado" };
-      el.innerHTML = head("PKG", p.id) +
-        stats([["Estado", STATUS[p.where] || p.where], ...(p.issue ? [["Incidencia", `<span class="is-warn">${ISSUE[p.issue]}</span>`]] : []), ["Grupo", R.groups[p.group].id], ["Ruta", p.sorted ? `${r.code} · ${r.town}` : "Pendiente de inducción"], ["CP destino", p.cp], ["Tamaño", `${p.size} · ${p.weight} kg`]]) +
+      el.innerHTML = head("PKG", p.id + (p.hv ? '<span class="ds-hv-tag">HIGH VALUE</span>' : "")) +
+        stats([["Estado", STATUS[p.where] || p.where], ...(p.issue ? [["Incidencia", `<span class="is-warn">${ISSUE[p.issue]}</span>`]] : []), ["Grupo", R.groups[p.group].id], ["Ruta", p.sorted ? `${r.code} · ${r.town}` : "Pendiente de inducción"], ["CP destino", p.cp], ["Tamaño", `${p.size} · ${p.weight} kg`], ...(p.hv ? [["Valor declarado", `${num(p.value)} €`]] : [])]) +
         `<ol class="ds-timeline">${p.hist.slice().reverse().map((h) => `<li><time>${clock(h.t)}</time>${esc(h.msg)}</li>`).join("")}</ol>`;
     } else if (s.kind === "lane") {
       const l = S.lanes[s.id], waiting = l.closed.reduce((t, c) => t + c.items.length, 0);
@@ -637,7 +710,8 @@
     if (mapVisible) V.draw(now / 1000);
     uiAcc += dt;
     if (uiAcc > (V.COARSE ? 0.5 : 0.25)) {
-      uiAcc = 0; renderKpis(); drawShift(); drawPlan(); drawHourly(); if (S.selected) renderDetail();
+      uiAcc = 0; renderKpis(); drawShift(); drawPlan(); drawHourly(); if (S.selected && ctab === "search") renderDetail();
+      if (ctab === "hv") renderHV();
       // al terminar el turno se abre el informe una vez
       if (S.over && !reportShown) { reportShown = true; openReport(); }
     }

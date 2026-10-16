@@ -24,6 +24,7 @@
 
   --ds-ok: #a4b67f;
   --ds-warn: #e3b25e;
+  --ds-hv: #f2c94c;
   --ds-bad: #ec6b5e;
   --ds-sel: #f2ede4;
 
@@ -60,6 +61,7 @@
 
   --ds-ok: #5e8a4e;
   --ds-warn: #c48a22;
+  --ds-hv: #b07d06;
   --ds-bad: #c8483b;
   --ds-sel: #1f1e1c;
 
@@ -383,6 +385,26 @@ button, select, input { font: inherit; color: inherit; }
 .is-bad { color: var(--ds-bad); }
 
 .ds-detail { min-height: 120px; }
+/* Pestañas del centro de control: buscar un paquete o seguir los high value */
+.ds-ctabs { display: flex; gap: 4px; padding: 3px; border: 1px solid var(--ds-line); border-radius: 999px; width: fit-content; }
+.ds-ctabs button { border: 0; background: none; color: var(--ds-fg-muted); font: 600 12px var(--ds-font-sans); padding: 5px 12px; border-radius: 999px; cursor: pointer; }
+.ds-ctabs button[aria-selected=true] { background: var(--ds-zone); color: var(--ds-fg); }
+.ds-ctabs b { font-family: var(--ds-font-mono); color: var(--ds-hv); margin-left: 4px; }
+.ds-hv-sum { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-bottom: 10px; }
+.ds-hv-sum div { padding: 6px 8px; border-radius: 8px; background: color-mix(in oklab, var(--ds-fg) 4%, transparent); }
+.ds-hv-sum span { display: block; font-size: 10px; color: var(--ds-fg-muted); text-transform: uppercase; letter-spacing: .04em; }
+.ds-hv-sum strong { font: 600 16px var(--ds-font-mono); }
+.ds-hv-sum strong.is-bad { color: var(--ds-bad); }
+.ds-hv-filters { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 8px; }
+.ds-hv-list { max-height: 340px; overflow: auto; margin: 0 -4px; }
+.ds-hv-list table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.ds-hv-list th { position: sticky; top: 0; background: var(--ds-card, var(--ds-zone)); font-size: 10px; font-weight: 500; color: var(--ds-fg-muted); text-align: left; padding: 0 4px 6px; text-transform: uppercase; letter-spacing: .04em; }
+.ds-hv-list td { padding: 5px 4px; border-top: 1px dashed var(--ds-line); vertical-align: top; }
+.ds-hv-list tr { cursor: pointer; }
+.ds-hv-list tbody tr:hover td { background: color-mix(in oklab, var(--ds-hv) 8%, transparent); }
+.ds-hv-list td.ds-mono { font-family: var(--ds-font-mono); white-space: nowrap; }
+.ds-hv-list small { display: block; color: var(--ds-fg-muted); }
+.ds-hv-tag { display: inline-block; font: 700 9px var(--ds-font-mono); color: var(--ds-hv); border: 1px solid var(--ds-hv); border-radius: 4px; padding: 0 4px; margin-left: 6px; vertical-align: 1px; }
 .ds-detail h3 { display: flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 600; margin-bottom: 6px; }
 .ds-detail p { font-size: 13px; line-height: 1.5; color: var(--ds-fg-soft); margin-bottom: 8px; }
 .ds-hint { margin: 0 !important; }

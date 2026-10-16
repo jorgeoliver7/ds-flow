@@ -13,10 +13,12 @@ Forma parte del [portfolio de Jorge Acedo](https://jorgeoliver7.github.io/Portfo
 1. **Elige un escenario** arriba a la izquierda: noche normal, pico, falta de personal, camión retrasado o tarde (PM), el turno de same day con unos 500 paquetes que salen a las 18:00. Cada uno tiene su semilla, así que sale igual cada vez. También se puede enlazar directamente con `?escenario=pico`.
 2. **Sube la velocidad** a 180× o 600× para ver el turno entero en unos minutos.
 3. **Sigue la barra del turno**: camiones del plan (▼), corte del sort, oleadas de salida y el rombo con la hora prevista de fin del sort, en verde si llega al corte y en rojo si no.
-4. **Prueba el planificador** en "Procesos y plantilla": mueve personas con − y + y verás la nueva hora de fin y las rutas que saldrían tarde antes de aplicar el cambio. Debajo está la **plantilla mínima** para llegar al corte con 15 min de margen y sacar todas las oleadas; "Probar" la carga en el planificador.
+4. **Prueba el planificador** en "Procesos y plantilla": mueve personas con − y + y verás al instante la nueva hora de fin del sort, qué proceso marcaría el ritmo, las rutas que saldrían tarde, el rollover, las horas-persona que quedan y quién entraría o saldría de cada proceso (no es lo mismo quitar al más rápido que a alguien nuevo). **"Simular el resto del turno"** repite la partida exacta hasta ese momento y la sigue hasta la última furgoneta con y sin el cambio, para comparar el resultado real. Debajo está la **plantilla mínima** para llegar al corte con 15 min de margen, sacar todas las oleadas y cubrir los marshals; "Probar" la carga en el planificador.
 5. **Sigue las recomendaciones**: durante el turno la app avisa como lo haría un responsable de turno ("Mueve 1 de inducción a stow: el sort acabaría a las 05:52 en vez de a las 06:23"). Se aplican con un clic y quedan en la actividad.
-6. **Mira la pestaña "Plantilla"**: cada persona del turno con un ID y un nombre inventados, su equipo (noche, mañana o tarde), dónde está ahora, horas, paquetes, UPH, % del objetivo, comparación con la media de su proceso y missorts. Marca a los mejores y a quien necesita seguimiento, permite mover a alguien de proceso y se descarga en CSV.
-7. **Al acabar se abre el informe** con lo que salió bien y lo que hay que mejorar, y compara la plantilla con la que se empezó con la mínima para ese volumen. Se puede descargar en CSV o guardar como PDF.
+6. **Marshals**: un dock marshal hace el check-in de cada camión antes de que atraque y un yard marshal coloca y da la salida a las furgonetas durante las oleadas. Sin ellos no se para nada, pero los camiones tardan más en atracar y descargan más despacio, y las furgonetas tardan en aparcar y salen más tarde. Se ven en el plano (verde en su puesto, rojo si faltan) y se pueden quitar para ver el efecto.
+7. **Sigue los high value**: en el centro de control, la pestaña "High Values" lista los paquetes de valor alto del turno con dónde está cada uno ahora (camión, carro, saca, carro de pick, furgoneta...) y desde cuándo, y avisa si alguno está en problem solve, en una saca que no es la suya o se ha quedado sin su furgoneta. En el mapa llevan un marco dorado.
+8. **Mira la pestaña "Plantilla"**: cada persona del turno con un ID y un nombre inventados, su equipo (noche, mañana o tarde), dónde está ahora, horas, paquetes, UPH, % del objetivo, comparación con la media de su proceso y missorts. Marca a los mejores y a quien necesita seguimiento, permite mover a alguien de proceso y se descarga en CSV.
+9. **Al acabar se abre el informe** con lo que salió bien y lo que hay que mejorar, y compara la plantilla con la que se empezó con la mínima para ese volumen. Se puede descargar en CSV o guardar como PDF.
 
 ![Informe de fin de turno con falta de personal](docs/informe.jpg)
 
@@ -28,7 +30,7 @@ Forma parte del [portfolio de Jorge Acedo](https://jorgeoliver7.github.io/Portfo
 
 | Métrica | Qué mide |
 | --- | --- |
-| Fin previsto del sort | Hora a la que quedaría todo clasificado en sacas al ritmo de la plantilla actual. Simula minuto a minuto lo que queda: los camiones pendientes entran al ritmo de descarga desde su llegada y el proceso más lento (inducción o stow) va vaciando lo acumulado. |
+| Fin previsto del sort | Hora a la que quedaría todo clasificado en sacas al ritmo de la plantilla actual. Simula minuto a minuto lo que queda: los camiones pendientes entran al ritmo de descarga desde que pasan el check-in y el proceso más lento (zona de carros, inducción o stow) va vaciando lo acumulado al ritmo medio real de cada uno, medido con la simulación. Si problem solve va atrasado, el sort no acaba hasta que vuelven sus paquetes. |
 | Corte del sort | Hora límite para tener todo clasificado antes de empezar a cargar. |
 | Rutas a tiempo | Furgonetas que salen dentro de la ventana de su oleada. |
 | Rollover | Paquetes que siguen en la estación cuando su ruta ya ha salido: se quedan para el día siguiente. |
@@ -38,7 +40,7 @@ Forma parte del [portfolio de Jorge Acedo](https://jorgeoliver7.github.io/Portfo
 | Missort | Paquetes que acaban en una saca que no es la suya. Se detectan en pick y vuelven por problem solve. |
 | DPMO | Defectos (dañados, sin etiqueta y missorts) por millón de paquetes recibidos. |
 | Problem solve | Paquetes en revisión y su tiempo medio de resolución. Los dañados sin arreglo se dan de baja. |
-| Plantilla mínima | Personas por proceso con las que el sort acaba 15 min antes del corte y salen todas las oleadas. Se calcula con un modelo de flujo: los camiones entran al ritmo de descarga y el sort los vacía al 95% de su ritmo nominal, que es lo que rinde de media una noche. |
+| Plantilla mínima | Personas por proceso con las que el sort acaba 15 min antes del corte, salen todas las oleadas y problem solve no deja paquetes sin volver a su saca, más un dock marshal y un yard marshal. Se calcula con el mismo modelo de flujo que la previsión, con el ritmo del equipo habitual. |
 | vs equipo | UPH de una persona frente a la media de las demás de su proceso en el mismo turno. Como la UPH es por hora fichada, las esperas bajan a todo el equipo; compararse con el equipo aísla el ritmo de cada uno. Por debajo del 90% sale como aviso, desde el 108% como top. |
 | Tiempo de ciclo | Minutos medios de cada tramo: muelle → inducción → saca → pick → salida. |
 
@@ -81,7 +83,8 @@ JavaScript sin dependencias y Canvas. Sin build: es una página estática.
 | `importcsv.js` | Lectura del CSV de una noche |
 | `render.js` | Dibujo del plano en Canvas |
 | `charts.js` | Gráficas pequeñas (plan frente a real, ritmo por hora) |
-| `ui.js` | Centro de control, planificador, controles y bucle de animación |
+| `ui.js` | Centro de control, planificador, high values, controles y bucle de animación |
+| `whatif-worker.js` | Simula el resto del turno en segundo plano para el planificador |
 | `test/` | Pruebas del motor (`npm test`) |
 
 ## Ejecutar en local
@@ -97,7 +100,7 @@ python3 -m http.server 8000
 npm test   # node --test, sin dependencias
 ```
 
-Comprueban que no se pierde ningún paquete, que la misma semilla da la misma partida, que el turno se completa, que la previsión se acerca a la hora real, el planificador, las incidencias, los escenarios y la importación del CSV. Se ejecutan en cada PR con GitHub Actions.
+Comprueban que no se pierde ningún paquete, que la misma semilla da la misma partida, que el turno se completa, que la previsión se acerca a la hora real, que la estimación del planificador se acerca a la simulación completa, que simular el resto del turno repite la partida exacta, el efecto de los marshals, los high value, las incidencias, los escenarios y la importación del CSV. Se ejecutan en cada PR con GitHub Actions.
 
 ## Despliegue
 
