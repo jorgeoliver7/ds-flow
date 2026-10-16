@@ -135,7 +135,7 @@
     const badges = {};
     function marshalBadge(key, x, y, right) {
       const n = S.staff[key], on = E.marshalsOn()[key], miss = on && !n;
-      const label = miss ? `Sin ${key} marshal` : `${n > 1 ? n + " × " : ""}${key === "dock" ? "Dock" : "Yard"} marshal`;
+      const label = miss ? `Sin ${key} marshall` : `${n > 1 ? n + " × " : ""}${key === "dock" ? "Dock" : "Yard"} marshall`;
       const col = miss ? C.bad : on ? C.ok : C.muted;
       ctx.font = SANS(600, 10);
       const w = ctx.measureText(label).width + 30, h = 20;
@@ -192,6 +192,9 @@
       ctx.textBaseline = "top";
       text(String(n), R.x + 10, R.y + 50, MONO(600, 20), C.fg);
       text("paquetes en carros", R.x + 10, R.y + 74, SANS(500, 10), C.muted);
+      // carga para la noche aparcada en la playa (turno de tarde)
+      const held = E.heldCount();
+      if (held) text(`${held} para la noche`, R.x + 10, R.y + 90, MONO(600, 9), C.soft);
       R.groups.forEach((g, gi) => {
         const first = laneRect(S.lanes[gi * R.classes.length]), last = laneRect(S.lanes[gi * R.classes.length + R.classes.length - 1]);
         text(g.id, first.x, R.y + 10, MONO(600, 11), C.aisle[g.aisles[0]]);
@@ -203,11 +206,14 @@
         ctx.fillStyle = C.floor; rr(lr.x, lr.y, lr.w, lr.h, 8); ctx.fill();
         if (isSel("lane", i)) { ctx.strokeStyle = C.sel; ctx.lineWidth = 2; ctx.stroke(); }
         text(l.cls.short, lr.x + 5, lr.y + lr.h - 12, MONO(600, 8), C.muted);
-        const carts = (l.open ? [l.open] : []).concat(l.closed);
+        // primero los carros del turno; detrás, más apagados, los que esperan al sort de la noche
+        const carts = (l.open ? [l.open] : []).concat(l.closed, l.holdOpen ? [l.holdOpen] : [], l.held);
         const perRow = Math.floor((lr.w - 6) / (cw + gap)), rows = 2, max = perRow * rows;
         carts.slice(0, max).forEach((c, j) => {
           const x = lr.x + 5 + (j % perRow) * (cw + gap), y = lr.y + 5 + Math.floor(j / perRow) * (ch + 6);
-          drawCartIcon(x, y, cw, ch, c.items.length / l.cls.cap, col, c === l.open, bump(c.bump || 0, NOW));
+          if (c.hold) ctx.globalAlpha = 0.4;
+          drawCartIcon(x, y, cw, ch, c.items.length / l.cls.cap, col, c === l.open || c === l.holdOpen, bump(c.bump || 0, NOW));
+          ctx.globalAlpha = 1;
         });
         if (carts.length > max) text("+" + (carts.length - max), lr.x + lr.w - 4, lr.y + lr.h - 12, MONO(600, 8), C.soft, "right");
       }
@@ -450,7 +456,7 @@
       const r = S.routes[p.route - 1];
       switch (p.where) {
         case "transit": return p.tr ? tpos(p.tr) : null;
-        case "staging": { const l = laneOf(p); return l ? laneCenter(l) : center(R); }
+        case "staging": case "held": { const l = laneOf(p); return l ? laneCenter(l) : center(R); }
         case "moving": { const m = S.moves.find((x) => x.cart.items.includes(p)); return m ? movePos(m) : center(I); }
         case "induct": return center(I);
         case "ps": return center(PS);

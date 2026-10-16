@@ -31,11 +31,11 @@
     });
 
     const kpis = [
-      ["Volumen", n0(S.received), `de ${n0(S.plan.volume)} planificados`],
+      ["Volumen", n0(S.received), `de ${n0(S.plan.volume)} planificados${S.held ? ` · ${n0(S.held)} para la noche` : ""}`],
       ["Fin del sort", sortEnd == null ? "Sin terminar" : clock(sortEnd), sortEnd == null ? `corte ${clock(cutoff)}` : sortEnd <= cutoff ? `${fmt(cutoff - sortEnd)} antes del corte` : `${fmt(sortEnd - cutoff)} después del corte`, sortEnd != null && sortEnd <= cutoff ? "ok" : "bad"],
       ["Rutas a tiempo", `${m.routesOnTime}/${m.routesTotal}`, m.routesLate ? `${m.routesLate} tarde` : "todas", m.routesLate ? "bad" : "ok"],
       ["Rollover", String(m.rollover), "paquetes para mañana", m.rollover ? "bad" : "ok"],
-      ["Horas trabajadas", dec(m.laborHours), "horas-persona"],
+      ["Horas trabajadas", dec(m.laborHours), m.supportHours >= 0.1 ? `horas-persona · ${dec(m.supportHours)} de apoyo tras el sort` : "horas-persona"],
       ["Paquetes / hora trabajada", m.pph == null ? "—" : String(Math.round(m.pph)), "clasificados"],
       ...(hourly ? [
         ["Coste del turno", n0(m.laborHours * hourly) + " €", `${dec(m.laborHours)} h a ${String(hourly).replace(".", ",")} €/h`],
@@ -72,6 +72,7 @@
     if (worst && worst.ratio < 0.9) bad.push(`${worst.name} se quedó en el ${pct(worst.ratio)} de su objetivo (${Math.round(worst.uph)} de ${worst.target} UPH por hora fichada): hubo esperas o sobraba gente.`);
     if (q.missortRate <= 0.005) good.push(`Missort del ${pct(q.missortRate, 2)}, dentro del 0,5% objetivo.`);
     else bad.push(`Missort del ${pct(q.missortRate, 2)}, por encima del 0,5% objetivo.`);
+    if (S.held) good.push(`${n0(S.held)} paquetes de la carga de la noche se descargaron y quedaron en la playa para el ciclo 1.`);
     if (q.writtenOff) bad.push(`${q.writtenOff} paquete${q.writtenOff > 1 ? "s dañados se dieron" : " dañado se dio"} de baja.`);
     // plantilla con la que empezó el turno frente a la mínima calculada para ese volumen
     const cp = S.crewPlan, s0 = S.staff0 || S.staff, SORT = ["receive", "induct", "stow", "ps"];
@@ -103,10 +104,10 @@
       if (!left.length && !lost.length && S.over) good.push(`Los ${S.hv.length} high value del turno salieron a reparto en su furgoneta.`);
     }
     // marshals: si faltó alguno mientras hacía falta
-    const nm = S.noMarshal || {}, gap = [["dock", "dock marshal", "los camiones tardaron más en atracar y descargaron más despacio"], ["yard", "yard marshal", "las furgonetas tardaron más en colocarse y en salir"]]
+    const nm = S.noMarshal || {}, gap = [["dock", "dock marshall", "los camiones tardaron más en atracar y descargaron más despacio"], ["yard", "yard marshall", "las furgonetas tardaron más en colocarse y en salir"]]
       .filter(([k]) => (nm[k] || 0) >= 5);
     for (const [k, name, why] of gap) bad.push(`Sin ${name} durante ${fmt(nm[k])}: ${why}.`);
-    if (!gap.length && (L.docks.marshal || L.yard.marshal)) good.push("Dock marshal y yard marshal cubiertos durante todo su horario.");
+    if (!gap.length && (L.docks.marshal || L.yard.marshal)) good.push("Dock marshall y yard marshall cubiertos durante todo su horario.");
     for (const ev of S.plan.events) {
       if (ev.type === "conveyor" && ev.state !== "pending") bad.push(`El conveyor estuvo parado ${ev.minutes} min desde las ${clock(ev.at)}.`);
     }

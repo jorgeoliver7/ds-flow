@@ -8,7 +8,7 @@
   const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
   const num = (v) => String(Math.round(v)).replace(/\B(?=(\d{3})+(?!\d))/g, ".");
   const pct = (v) => (v == null ? "—" : Math.round(v * 100) + "%");
-  const PROC = { receive: "Zona de carros", induct: "Inducción", stow: "Stow", pick: "Pick", ps: "Problem solve", dock: "Dock marshal", yard: "Yard marshal" };
+  const PROC = { receive: "Zona de carros", induct: "Inducción", stow: "Stow", pick: "Pick", ps: "Problem solve", dock: "Dock marshall", yard: "Yard marshall" };
   const SHORT = { receive: "Carros", induct: "Inducción", stow: "Stow", pick: "Pick", ps: "PS", dock: "Dock M.", yard: "Yard M." };
   // los marshals no mueven paquetes: cuentan camiones recibidos y furgonetas despachadas, sin objetivo de UPH
   const MARSHAL = { dock: "camiones", yard: "furgonetas" };
@@ -38,13 +38,16 @@
     const clock = E().clock;
     if (MARSHAL[e.proc]) {
       if (E().marshalsOn()[e.proc]) return { txt: PROC[e.proc], cls: "on" };
-      if (e.proc === "yard" && !S.over) return { txt: `Yard marshal desde ${clock(S.plan.firstWave - (L.yard.marshal ? L.yard.marshal.before : 15))}`, cls: "later" };
-      if (e.proc === "dock" && S.dockDoneAt == null) return { txt: `Dock marshal desde ${clock(S.plan.sortStart)}`, cls: "later" };
+      if (e.proc === "yard" && !S.over) return { txt: `Yard marshall desde ${clock(S.plan.firstWave - (L.yard.marshal ? L.yard.marshal.before : 15))}`, cls: "later" };
+      if (e.proc === "dock" && S.dockDoneAt == null) return { txt: `Dock marshall desde ${clock(S.plan.sortStart)}`, cls: "later" };
       return { txt: e.proc === "dock" ? "Camiones recibidos" : "Oleadas terminadas", cls: "idle" };
     }
     const on = e.proc === "pick" ? pickOn : e.proc === "ps" ? sortOn || pickOn : sortOn;
     if (on) return { txt: PROC[e.proc], cls: "on" };
     if (e.proc === "pick" && !pickOn && !S.over) return { txt: `Pick desde ${clock(S.plan.pickStart)}`, cls: "later" };
+    // tras el sort, la noche sigue hasta su hora de salida haciendo rutas y buscando paquetes perdidos
+    if (!sortOn && S.sortDoneAt != null && e.proc !== "ps" && S.plan.nightEnd != null && S.t < S.plan.nightEnd && e.team === "noche")
+      return { txt: `Apoyo: rutas y paquetes perdidos (hasta las ${clock(S.plan.nightEnd)})`, cls: "on" };
     if (!sortOn && S.sortDoneAt != null) return { txt: "Sort terminado", cls: "idle" };
     return { txt: `${PROC[e.proc]} desde ${clock(S.plan.sortStart)}`, cls: "later" };
   }

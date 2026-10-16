@@ -35,11 +35,14 @@
     },
     {
       id: "pm", name: "Tarde (PM, same day)", seed: 58,
-      desc: "Turno de tarde: unos 500 paquetes de same day en 8 rutas que salen a las 18:00, con un equipo pequeño.",
+      desc: "Turno de tarde: los camiones de las 14:30 y las 15:30 traen carga para la noche, que se descarga y se deja en la playa. El de las 16:00 trae unos 500 paquetes de same day, que se procesan para las 8 rutas de las 18:00.",
       shift: (sh) => ({
-        ...sh, start: "14:00", sortStart: null, nightEnd: null, breaks: [],
-        trucks: [{ at: "14:30", units: 300 }, { at: "15:30", units: 200 }],
-        sortCutoff: "16:45", events: [],
+        ...sh, start: "14:00", sortStart: "14:00", nightEnd: null, breaks: [],
+        trucks: [
+          { at: "14:30", units: 1800, hold: true }, { at: "15:30", units: 1600, hold: true },
+          { at: "16:00", units: 500 },
+        ],
+        sortCutoff: "17:00", events: [],
         waves: [{ at: "18:00", aisles: ["A"] }],
       }),
       staff: () => ({ receive: 1, induct: 1, stow: 3, pick: 3, ps: 1 }),

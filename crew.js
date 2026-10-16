@@ -24,7 +24,7 @@
 
   // Equipos del turno: el de noche hace el sort, el de mañana el pick. La tarde lo hace todo con un equipo pequeño.
   // base: personas por proceso que hay normalmente; extra: gente formada que se puede llamar (horas extra, otro turno)
-  // marshals: el dock marshal es del equipo de noche (recibe los camiones) y el yard marshal del de mañana (oleadas)
+  // marshals: el dock marshall es del equipo de noche (recibe los camiones) y el yard marshall del de mañana (oleadas)
   function teams(L, evening) {
     const b = { receive: L.receive.staff, induct: L.induct.staff, stow: L.stow.staff, ps: L.problem.staff };
     if (evening) return [{ team: "tarde", base: { receive: 1, induct: 1, stow: 3, pick: 3, ps: 1 }, extra: { stow: 1, pick: 1 }, marshals: { dock: 1, yard: 1 }, marshalExtra: {} }];

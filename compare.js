@@ -37,7 +37,7 @@
   function rows(a, b, hourly) {
     const ca = cost(a, hourly), cb = cost(b, hourly);
     const sortTxt = (r) => (r.sortEnd == null ? "sin terminar" : `${clock(r, r.sortEnd)} · ${r.sortEnd <= r.cutoff ? Math.round(r.cutoff - r.sortEnd) + " min antes" : Math.round(r.sortEnd - r.cutoff) + " min tarde"}`);
-    const crew = (r) => `${sum(r.staff, ["receive", "induct", "stow", "ps"])} sort · ${r.staff.pick} pick · ${sum(r.staff, ["dock", "yard"])} marshals`;
+    const crew = (r) => `${sum(r.staff, ["receive", "induct", "stow", "ps"])} sort · ${r.staff.pick} pick · ${sum(r.staff, ["dock", "yard"])} marshalls`;
     return [
       { label: "Volumen", a: n0(a.received), b: n0(b.received), va: a.received, vb: b.received, better: 0 },
       { label: "Plantilla", a: crew(a), b: crew(b), better: 0 },
