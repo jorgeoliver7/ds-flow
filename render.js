@@ -8,6 +8,11 @@
     const { dockX, beltY, bagRect, bagCenter, cartRect, cartCenter, padRect, padCenter, laneRect, laneCenter, center } = E.geo;
     const AISLE_COLORS = ["--ds-a", "--ds-b", "--ds-c", "--ds-d"];
     const ctx = canvas.getContext("2d");
+    // el motor avanza a pasos fijos; LEAD son los minutos simulados que el reloj lleva por delante del último paso,
+    // y con ellos lo que se mueve se dibuja donde estará, para que vaya fluido a cualquier velocidad
+    let LEAD = 0;
+    const ahead = (o, minutes) => Math.min(1, o.p + LEAD / minutes);
+    const tpos = (tr) => posOf({ pts: tr.pts, segs: tr.segs, d: Math.min(tr.total, tr.d + (tr.belt && S.conveyorDown ? 0 : CV.speed * LEAD)) });
 
     const loadColor = (m) => (m > 15 ? C.bad : m > 6 ? C.warn : C.ok);
 
@@ -148,7 +153,8 @@
     }
 
     function drawTruck(t) {
-      const off = t.state === "arriving" ? (1 - ease(t.p)) * -130 : t.state === "leaving" ? ease(t.p) * -130 : 0;
+      const tp = t.state === "unloading" ? t.p : ahead(t, E.VEH);
+      const off = t.state === "arriving" ? (1 - ease(tp)) * -130 : t.state === "leaving" ? ease(tp) * -130 : 0;
       const w = 66, h = 96, x = dockX(t.dock) - w / 2, y = D.wallY - h - 6 + off;
       const moving = t.state !== "unloading";
       ctx.fillStyle = C.wheel;
@@ -167,7 +173,7 @@
       text(t.units + " paq", x + w / 2, y + 48, MONO(500, 10), C.soft, "center");
     }
 
-    const movePos = (m) => posOf({ pts: m.pts, segs: m.segs, d: Math.min(m.p, 1) * m.total });
+    const movePos = (m) => posOf({ pts: m.pts, segs: m.segs, d: ahead(m, R.moveMinutes / E.pf("receive")) * m.total });
 
     function drawCartIcon(x, y, w, h, fill, color, open, k) {
       ctx.fillStyle = C.wheel; ctx.fillRect(x + 2, y + h - 1, 3, 3); ctx.fillRect(x + w - 5, y + h - 1, 3, 3);
@@ -356,8 +362,9 @@
       }
       for (const v of S.vans) {
         const p = padRect(v.pad), r = S.routes[v.route - 1];
-        const off = v.state === "arriving" ? (1 - ease(v.p)) * 120 : v.state === "leaving" ? ease(v.p) * -120 : 0;
-        ctx.globalAlpha = v.state === "arriving" ? Math.max(ease(v.p), 0.05) : v.state === "leaving" ? 1 - ease(v.p) : 1;
+        const vp = v.state === "arriving" ? ahead(v, S.staff.yard ? E.VEH : Y.marshal.parkNoMarshal) : v.state === "leaving" ? ahead(v, E.VEH) : v.p;
+        const off = v.state === "arriving" ? (1 - ease(vp)) * 120 : v.state === "leaving" ? ease(vp) * -120 : 0;
+        ctx.globalAlpha = v.state === "arriving" ? Math.max(ease(vp), 0.05) : v.state === "leaving" ? 1 - ease(vp) : 1;
         let x = p.x + 6, y = p.y + 12 + off, w = p.w - 12, h = p.h - 18;
         // la furgoneta se hunde un poco con cada paquete y lleva ruedas que giran al moverse
         const k = bump(v.bump || 0, NOW);
@@ -396,7 +403,7 @@
 
     function drawTransit(time) {
       for (const tr of S.transit) {
-        const p = posOf(tr), pkg = tr.pkg;
+        const p = tpos(tr), pkg = tr.pkg;
         const col = pkg.issue && (tr.dest === "ps" || pkg.where === "ps") ? C.bad : pkg.sorted ? C.aisle[S.routes[pkg.route - 1].aisle] : C.raw;
         // cajita de cartón que se balancea, con la cinta del color de su pasillo
         const seed = pkg.seed || (pkg.seed = Math.random() * 6.28);
@@ -442,7 +449,7 @@
       if (!p) return null;
       const r = S.routes[p.route - 1];
       switch (p.where) {
-        case "transit": return p.tr ? posOf(p.tr) : null;
+        case "transit": return p.tr ? tpos(p.tr) : null;
         case "staging": { const l = laneOf(p); return l ? laneCenter(l) : center(R); }
         case "moving": { const m = S.moves.find((x) => x.cart.items.includes(p)); return m ? movePos(m) : center(I); }
         case "induct": return center(I);
@@ -456,8 +463,8 @@
     }
 
     let NOW = 0;
-    function draw(time) {
-      NOW = time;
+    function draw(time, lead) {
+      NOW = time; LEAD = lead || 0;
       if (bgDirty) paintBackground();
       ctx.drawImage(bg, 0, 0, L.width, L.height);
       drawDocks(); drawBelts(time);
@@ -491,7 +498,7 @@
     const inside = (x, y, b) => x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h;
     function hit(x, y) {
       let best = null, bd = 10;
-      for (const tr of S.transit) { const p = posOf(tr), d = Math.hypot(p.x - x, p.y - y); if (d < bd) { bd = d; best = tr.pkg; } }
+      for (const tr of S.transit) { const p = tpos(tr), d = Math.hypot(p.x - x, p.y - y); if (d < bd) { bd = d; best = tr.pkg; } }
       if (best) return { kind: "pkg", id: best.id };
       for (const k in badges) if (inside(x, y, { ...badges[k], x: badges[k].x - 4, y: badges[k].y - 4, w: badges[k].w + 8, h: badges[k].h + 8 })) return { kind: "marshal", id: k };
       for (const t of S.trucks) if (y < D.wallY && Math.abs(x - dockX(t.dock)) < 34) return { kind: "truck", id: t.id };

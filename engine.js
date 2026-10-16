@@ -1090,7 +1090,7 @@
     return {
       S, L, SH, geo, posOf, step, freePad, laneOf, stagingCount, rate, loads, stowRate, inPlantCount,
       toPick, forecast, metrics, planAt, sortCap, at, waveForecast, hourRate, log, crewNeeded, advise,
-      capacity, bottleneck, factors, laborLeft, whatIf, marshalsOn, summary, apply, spec,
+      capacity, bottleneck, factors, laborLeft, whatIf, marshalsOn, summary, apply, spec, pf, VEH,
       // acciones (quedan apuntadas para poder repetir la partida)
       addTruck: () => act({ type: "truck" }),
       callVan: (route) => act({ type: "van", route: route ? route.n : null }),

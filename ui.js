@@ -709,7 +709,7 @@
     const dt = Math.min((now - last) / 1000, 0.1); last = now;
     // pasos fijos de DSEngine.DT: así la partida se puede repetir exacta para simular el resto del turno
     if (!S.paused) { simAcc += dt * S.speed; while (simAcc >= DSEngine.DT) { E.step(DSEngine.DT); simAcc -= DSEngine.DT; } }
-    if (mapVisible) V.draw(now / 1000);
+    if (mapVisible) V.draw(now / 1000, S.paused ? 0 : simAcc);
     uiAcc += dt;
     if (uiAcc > (V.COARSE ? 0.5 : 0.25)) {
       uiAcc = 0; renderKpis(); drawShift(); drawPlan(); drawHourly(); if (S.selected && ctab === "search") renderDetail();
