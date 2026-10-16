@@ -189,6 +189,7 @@
       case "truck": return `Camión ${p.truck}`;
       case "transit": return HV_DEST[p.tr && p.tr.dest] || "En movimiento";
       case "staging": return `Carro ${p.cartId} · zona de carros`;
+      case "held": return `Carro ${p.cartId} · en la playa, para la noche`;
       case "moving": return `Carro ${p.cartId} hacia inducción`;
       case "induct": return "Cola de inducción";
       case "aisle": return `Pasillo ${ST.aisles[r.aisle].id} · esperando stow`;
@@ -254,7 +255,7 @@
     const kp = [
       ["*Hora", clock(S.t)],
       [(f.done ? "*Fin del sort" : "*Fin previsto del sort"), `<span class="${late ? "is-bad" : "is-ok"}">${clock(f.sortEnd)}</span>`, vsCutoff(f.sortEnd, m.cutoff) + " del corte"],
-      ["Recibidos", S.received, `de ${num(S.plan.volume)} planificados`],
+      ["Recibidos", S.received, `de ${num(S.plan.volume)} planificados${S.held ? ` · ${num(S.held)} para la noche` : ""}`],
       ["Clasificados", S.sorted],
       ["En planta", S.received - S.dispatched],
       ["*Stow / h", E.stowRate()],
@@ -277,8 +278,8 @@
     const waiting = S.gate.filter((g) => g.checked).length;
     if (waiting) al.push(["warn", `${waiting} camión${waiting > 1 ? "es esperan" : " espera"} muelle libre`]);
     for (const p of m.processes) if (p.marshal && p.needed && !p.staff) al.unshift(["bad", p.key === "dock"
-      ? "Sin dock marshal: los camiones tardan más en atracar y descargan más despacio"
-      : "Sin yard marshal en las oleadas: las furgonetas tardan en colocarse y salen más tarde"]);
+      ? "Sin dock marshall: los camiones tardan más en atracar y descargan más despacio"
+      : "Sin yard marshall en las oleadas: las furgonetas tardan en colocarse y salen más tarde"]);
     if (E.freePad() < 0) al.push(["warn", "Yard completo: no caben más furgonetas"]);
     if (m.routesLate) al.push(["warn", `${m.routesLate} ruta${m.routesLate > 1 ? "s salieron" : " salió"} tarde`]);
     if (S.over) al.unshift(["ok", `Turno terminado a las ${clock(S.endAt)}`]);
@@ -307,7 +308,7 @@
     el.innerHTML = S.events.slice(0, 14).map((e) => `<li class="is-${e.kind}"><time>${clock(e.t)}</time>${esc(e.msg)}</li>`).join("");
   }
 
-  const STATUS = { truck: "En el camión", transit: "En movimiento", staging: "En la zona de carros", moving: "Carro de camino a inducción", induct: "Esperando inducción", aisle: "En el conveyor, esperando stow",
+  const STATUS = { truck: "En el camión", transit: "En movimiento", staging: "En la zona de carros", held: "En la playa, para el sort de la noche", moving: "Carro de camino a inducción", induct: "Esperando inducción", aisle: "En el conveyor, esperando stow",
     bag: "En la saca", ps: "En problem solve", writtenoff: "Dado de baja", cart: "En el carro de pick", van: "Cargado en furgoneta", route: "En reparto", delivered: "Entregado" };
 
   function staffCtl(key, label) {
@@ -331,13 +332,15 @@
       const r = S.routes[p.route - 1];
       const ISSUE = { damaged: "Dañado", noLabel: "Etiqueta ilegible", missort: "Mal clasificado" };
       el.innerHTML = head("PKG", p.id + (p.hv ? '<span class="ds-hv-tag">HIGH VALUE</span>' : "")) +
-        stats([["Estado", STATUS[p.where] || p.where], ...(p.issue ? [["Incidencia", `<span class="is-warn">${ISSUE[p.issue]}</span>`]] : []), ["Grupo", R.groups[p.group].id], ["Ruta", p.sorted ? `${r.code} · ${r.town}` : "Pendiente de inducción"], ["CP destino", p.cp], ["Tamaño", `${p.size} · ${p.weight} kg`], ...(p.hv ? [["Valor declarado", `${num(p.value)} €`]] : [])]) +
+        stats([["Estado", STATUS[p.where] || p.where], ...(p.issue ? [["Incidencia", `<span class="is-warn">${ISSUE[p.issue]}</span>`]] : []), ["Grupo", R.groups[p.group].id], ["Ruta", p.hold ? "Se asigna en el sort de la noche (ciclo 1)" : p.sorted ? `${r.code} · ${r.town}` : "Pendiente de inducción"], ["CP destino", p.cp], ["Tamaño", `${p.size} · ${p.weight} kg`], ...(p.hv ? [["Valor declarado", `${num(p.value)} €`]] : [])]) +
         `<ol class="ds-timeline">${p.hist.slice().reverse().map((h) => `<li><time>${clock(h.t)}</time>${esc(h.msg)}</li>`).join("")}</ol>`;
     } else if (s.kind === "lane") {
       const l = S.lanes[s.id], waiting = l.closed.reduce((t, c) => t + c.items.length, 0);
+      const heldCarts = l.held.length + (l.holdOpen ? 1 : 0), heldN = l.held.reduce((t, c) => t + c.items.length, 0) + (l.holdOpen ? l.holdOpen.items.length : 0);
       el.innerHTML = head(l.cls.short, `${l.group.id} · ${l.cls.name}`) +
         `<p>Carros de paquetes ${l.cls.name.toLowerCase()} del grupo ${l.group.id}, que van a los pasillos ${l.group.aisles.map((i) => ST.aisles[i].id).join(" y ")}.</p>` +
-        stats([["Carro abierto", l.open ? `${l.open.id} · ${l.open.items.length}/${l.cls.cap}` : "—"], ["Carros cerrados esperando", l.closed.length], ["Paquetes esperando", waiting + (l.open ? l.open.items.length : 0)], ["Capacidad por carro", l.cls.cap]]);
+        stats([["Carro abierto", l.open ? `${l.open.id} · ${l.open.items.length}/${l.cls.cap}` : "—"], ["Carros cerrados esperando", l.closed.length], ["Paquetes esperando", waiting + (l.open ? l.open.items.length : 0)],
+          ...(heldCarts ? [["Para la noche (ciclo 1)", `${heldCarts} carro${heldCarts > 1 ? "s" : ""} · ${heldN} paquetes`]] : []), ["Capacidad por carro", l.cls.cap]]);
     } else if (s.kind === "route") {
       const r = S.routes[s.id - 1], w = r.wave;
       el.innerHTML = head(r.code, `Ruta ${r.code} · ${r.town}`) +
@@ -366,10 +369,10 @@
       const now = !n ? (on ? '<span class="is-bad">Sin cubrir</span>' : "Sin cubrir") : on ? "En su puesto" : "Fuera de su horario";
       const rows = dock
         ? [["Ahora", now], ["Quién", who || "—"], ["En la puerta", `${S.gate.length} camión${S.gate.length === 1 ? "" : "es"}`],
-          ["Check-in por camión", n ? `${M.checkInMin} min` : `unos ${M.selfCheckInMin} min sin dock marshal`], ["Camiones recibidos", S.totals.dock || 0],
+          ["Check-in por camión", n ? `${M.checkInMin} min` : `unos ${M.selfCheckInMin} min sin dock marshall`], ["Camiones recibidos", S.totals.dock || 0],
           ["Horario", `desde las ${clock(S.plan.sortStart)} hasta el último camión`]]
         : [["Ahora", now], ["Quién", who || "—"], ["Aparcando", S.vans.filter((v) => v.state === "arriving").length + " furgonetas"],
-          ["Aparcar", n ? "1 min" : `unos ${M.parkNoMarshal} min sin yard marshal`], ["Furgonetas despachadas", S.totals.yard || 0],
+          ["Aparcar", n ? "1 min" : `unos ${M.parkNoMarshal} min sin yard marshall`], ["Furgonetas despachadas", S.totals.yard || 0],
           ["Horario", `desde las ${clock(S.plan.firstWave - M.before)}, durante las oleadas`]];
       el.innerHTML = head(M.code, M.name) + `<p>${M.desc}</p>` + stats(rows) + staffCtl(s.id, M.name);
     } else if (s.id === "conveyor") {
@@ -386,7 +389,7 @@
         rows = [["Por resolver", q.psOpen], ["Resolución media", q.psAvg == null ? "—" : fmtMin(q.psAvg)], ["Dados de baja", q.writtenOff], ["Capacidad", Math.round(E.rate(L.problem.uph * S.staff.ps, "ps", L.problem)) + " paq/h"]];
       }
       if (s.id === "yard") rows = [["Furgonetas", `${S.vans.length}/${Y.pads}`], ["Tiempo medio en yard", S.vanTimes.length ? fmtMin(avg(S.vanTimes)) : "—"], ["Salidas", S.routesOut]];
-      el.innerHTML = head(cfg.code, cfg.name) + `<p>${cfg.desc}</p>` + stats(rows) + (s.id !== "yard" ? staffCtl(s.id === "problem" ? "ps" : s.id) : staffCtl("yard", "Yard marshal"));
+      el.innerHTML = head(cfg.code, cfg.name) + `<p>${cfg.desc}</p>` + stats(rows) + (s.id !== "yard" ? staffCtl(s.id === "problem" ? "ps" : s.id) : staffCtl("yard", "Yard marshall"));
     }
   }
 
@@ -518,7 +521,7 @@
     const needHtml = `<div class="ds-need"><span>Plantilla mínima ${need.sortDone ? "" : need.reachable ? "para el corte, con 15 min de margen" : "(el corte ya no se alcanza)"}</span>
       ${need.sortDone ? "" : `<b>Sort ${need.sort}</b> <small>${crewTxt(need.staff, sortKeys)} · ahora ${sortNow}</small>`}
       <b>Pick ${need.pick}</b> <small>ahora ${S.staff.pick}</small>
-      <b>Marshals ${need.marshals}</b> <small>dock y yard · ahora ${S.staff.dock + S.staff.yard}</small>
+      <b>Marshalls ${need.marshals}</b> <small>dock y yard · ahora ${S.staff.dock + S.staff.yard}</small>
       <button class="ds-btn ds-btn--ghost" data-plan="need" title="Carga esta plantilla en el planificador para ver el efecto antes de aplicarla">Probar</button></div>`;
     $("#ds-procs").innerHTML = `${advHtml}<table><thead><tr><th>Proceso</th><th>Personas</th><th>UPH</th><th>Obj.</th><th>Cola</th></tr></thead><tbody>${rows}</tbody></table>${out}${needHtml}`;
   }
@@ -667,6 +670,8 @@
         ctx.globalAlpha = 0.4; tri(pt.at); ctx.globalAlpha = 1;
         tri(pt.eta); continue;
       }
+      // carga para la noche: triángulo hueco, no cuenta para el sort de este turno
+      if (pt.hold) { ctx.strokeStyle = C.muted; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(X(pt.at), by - 3); ctx.lineTo(X(pt.at) - 3, by - 9); ctx.lineTo(X(pt.at) + 3, by - 9); ctx.closePath(); ctx.stroke(); continue; }
       ctx.fillStyle = pt.state === "pending" ? (S.t >= pt.at ? C.warn : C.muted) : C.raw;
       tri(pt.at);
     }

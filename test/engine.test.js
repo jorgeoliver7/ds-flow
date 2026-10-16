@@ -72,7 +72,8 @@ test("métricas por proceso, horas trabajadas y tiempo de ciclo", () => {
   const E = shift({ seed: 7 });
   const m = E.metrics();
   assert.deepEqual(m.processes.map((p) => p.key), ["receive", "induct", "stow", "pick", "ps", "dock", "yard"]);
-  assert.ok(m.laborHours > 50 && m.laborHours < 250, `horas ${m.laborHours}`);
+  assert.ok(m.laborHours > 100 && m.laborHours < 400, `horas ${m.laborHours}`);
+  assert.ok(m.supportHours > 0 && m.supportHours < m.laborHours, `apoyo ${m.supportHours}`);
   assert.ok(m.pph > 0);
   for (const c of m.cycle) assert.ok(c.min > 0, c.key);
   assert.ok(m.waves.every((w) => w.done));
@@ -274,7 +275,7 @@ test("la estimación al instante se acerca a la simulación completa", () => {
   assert.equal(w.joins.length, 1); assert.equal(w.joins[0].to, "stow");
 });
 
-test("sin dock marshal los camiones tardan más en atracar y lo recomienda", () => {
+test("sin dock marshall los camiones tardan más en atracar y lo recomienda", () => {
   const SC = require("../scenarios.js");
   const o = SC.options(L, "normal");
   const a = DSEngine.create(L, o), b = DSEngine.create(L, { ...o, staff: { dock: 0 } });
@@ -284,18 +285,18 @@ test("sin dock marshal los camiones tardan más en atracar y lo recomienda", () 
   assert.ok(first(b) >= L.docks.marshal.selfCheckInMin);
   assert.equal(b.advise().id, "add:dock");
   assert.ok(b.forecast().sortEnd > a.forecast().sortEnd);
-  // el check-in se apunta a la persona que hace de dock marshal
+  // el check-in se apunta a la persona que hace de dock marshall
   assert.ok(a.S.crew.byProc.dock[0].units.dock >= 1);
 });
 
-test("sin yard marshal en las oleadas las furgonetas salen más tarde", () => {
+test("sin yard marshall en las oleadas las furgonetas salen más tarde", () => {
   const SC = require("../scenarios.js");
   const o = SC.options(L, "normal");
   const a = shift(o), b = shift({ ...o, staff: { yard: 0 } });
   const wait = (E) => DSEngine.avg(E.S.routes.map((r) => r.departAt - r.wave.at));
   assert.ok(wait(b) > wait(a) + 3, `${wait(a)} / ${wait(b)}`);
   assert.ok(b.metrics().routesLate > a.metrics().routesLate);
-  // el yard marshal solo cuenta horas durante las oleadas
+  // el yard marshall solo cuenta horas durante las oleadas
   const yardH = a.S.procMin.yard / 60;
   assert.ok(yardH > 1 && yardH < 3, `yard ${yardH} h`);
 });
@@ -356,4 +357,36 @@ test("comparar escenarios juega dos turnos enteros y calcula su coste", () => {
   run(E, 900);
   const k = R.build(E, SC.list[2], { hourly: 20 }).kpis.find((x) => x[0] === "Coste por paquete");
   assert.ok(k && /€$/.test(k[1]));
+});
+
+test("tarde: los camiones de antes de las 16:00 se quedan en la playa para la noche y el de las 16:00 sale a las 18:00", () => {
+  const SC = require("../scenarios.js");
+  const E = DSEngine.create(L, SC.options(L, "pm")), S = E.S;
+  const hold = S.plan.trucks.filter((x) => x.hold), same = S.plan.trucks.filter((x) => !x.hold);
+  assert.deepEqual(hold.map((x) => E.clock(x.at)), ["14:30", "15:30"]);
+  assert.deepEqual(same.map((x) => E.clock(x.at)), ["16:00"]);
+  let i = 0;
+  run(E, 900, (E) => {
+    if (i++ % 50) return;
+    assert.equal(E.S.received, E.inPlantCount() + E.S.dispatched + E.S.writtenOff, "la carga de la noche se cuenta aparte");
+  });
+  const total = hold.reduce((s, x) => s + x.units, 0);
+  assert.equal(S.held, total, "se descargan enteros");
+  assert.equal(E.heldCount(), total, "y se quedan en carros en la playa");
+  assert.equal(S.received, same[0].units, "solo se procesa el sameday");
+  const held = [...S.pkgs.values()].filter((p) => p.hold);
+  assert.ok(held.every((p) => p.where === "held" && !p.sorted && p.route == null), "ningún paquete de la noche se induce");
+  assert.ok(S.sortDoneAt != null && S.sortDoneAt <= S.plan.cutoff, "el sameday acaba antes del corte");
+  const m = E.metrics();
+  assert.ok(m.routesOut > 0 && m.routesLate === 0, "todas las rutas de las 18:00 salen a tiempo");
+  assert.equal(m.rollover, 0);
+});
+
+test("tras el sort, el equipo de noche sigue fichado hasta las 09:30 (rutas y paquetes perdidos)", () => {
+  const SC = require("../scenarios.js");
+  const E = shift(SC.options(L, "normal")), S = E.S, m = E.metrics();
+  const n = S.staff.receive + S.staff.induct + S.staff.stow;
+  const expect = (n * E.workBetween(S.sortDoneAt, S.plan.nightEnd)) / 60;
+  assert.ok(Math.abs(m.supportHours - expect) < 1e-6, `${m.supportHours} / ${expect}`);
+  assert.equal(E.clock(S.plan.nightEnd), "09:30");
 });

@@ -74,7 +74,7 @@
       target: ".ds-map-wrap", at: "06:50",
       before: (a) => a.setCtab("search"),
       title: "Las oleadas de salida",
-      body: (a) => `Son las ${a.clock(a.S().t)}. El sort ${a.S().sortDoneAt != null ? `acabó a las ${a.clock(a.S().sortDoneAt)}` : "sigue en marcha"} y el equipo de mañana recoge las sacas por rutas en carros. Las furgonetas entran al yard por oleadas: el yard marshal las coloca, cargan su carro y salen por arriba. Si una oleada sale tarde o deja paquetes, lo verás en las alertas.`,
+      body: (a) => `Son las ${a.clock(a.S().t)}. El sort ${a.S().sortDoneAt != null ? `acabó a las ${a.clock(a.S().sortDoneAt)}` : "sigue en marcha"} y el equipo de mañana recoge las sacas por rutas en carros. Las furgonetas entran al yard por oleadas: el yard marshall las coloca, cargan su carro y salen por arriba. Si una oleada sale tarde o deja paquetes, lo verás en las alertas.`,
     },
     {
       target: '.ds-tabs [data-view="crew"]', spotPad: 8,

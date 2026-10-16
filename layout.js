@@ -14,12 +14,12 @@ const DS_LAYOUT = {
     left: 40, right: 780,
     truckUnits: 2000,      // volumen típico de un camión extra (botón + Camión)
     unloadRate: 2000,      // paq/h por muelle
-    // Dock marshal: recibe cada camión, revisa precinto y documentación y le asigna muelle
+    // Dock marshall: recibe cada camión, revisa precinto y documentación y le asigna muelle
     marshal: {
-      name: "Dock marshal", code: "DKM",
+      name: "Dock marshall", code: "DKM",
       staff: 1,
-      checkInMin: 3,       // minutos por camión con dock marshal (uno detrás de otro si llegan juntos)
-      selfCheckInMin: 15,  // sin dock marshal: el conductor espera y se coordina como puede
+      checkInMin: 3,       // minutos por camión con dock marshall (uno detrás de otro si llegan juntos)
+      selfCheckInMin: 15,  // sin dock marshall: el conductor espera y se coordina como puede
       unloadNoMarshal: 0.85, // y la descarga va más lenta, sin nadie que ordene muelles y carros
       desc: "Recibe a cada camión en la puerta, comprueba precinto y albarán y le asigna muelle. Sin él los camiones esperan más para atracar y la descarga va más desordenada.",
     },
@@ -108,12 +108,12 @@ const DS_LAYOUT = {
     pads: 24,
     padCols: 4,            // columnas de plazas, la mitad a cada lado del carril
     loadRate: 1800,
-    // Yard marshal: ordena la entrada de furgonetas a sus plazas y da la salida durante las oleadas
+    // Yard marshall: ordena la entrada de furgonetas a sus plazas y da la salida durante las oleadas
     marshal: {
-      name: "Yard marshal", code: "YDM",
+      name: "Yard marshall", code: "YDM",
       staff: 1,
       before: 15,          // empieza este rato antes de la primera oleada
-      parkNoMarshal: 5,    // sin yard marshal: minutos que tarda una furgoneta en encontrar y ocupar su plaza
+      parkNoMarshal: 5,    // sin yard marshall: minutos que tarda una furgoneta en encontrar y ocupar su plaza
       loadNoMarshal: 0.85, // y la carga va más lenta
       desc: "Durante las oleadas dirige la entrada de cada furgoneta a su plaza, vigila la carga y da la salida. Sin él las furgonetas tardan en colocarse y salen más tarde.",
     },
@@ -128,7 +128,7 @@ const DS_LAYOUT = {
     nightEnd: "09:30",
     breaks: [{ at: "04:00", minutes: 30 }],
     // unos 26.000 paquetes en 12 camiones para un equipo de noche de 30 personas
-    // (4 en carros, 5 en inducción, 19 en stow y 2 en problem solve) más el dock marshal
+    // (4 en carros, 5 en inducción, 19 en stow y 2 en problem solve) más el dock marshall
     trucks: [
       { at: "01:00", units: 2300 }, { at: "01:05", units: 2100 }, { at: "01:20", units: 2400 },
       { at: "01:35", units: 2200 }, { at: "01:50", units: 2300 }, { at: "02:05", units: 2100 },
