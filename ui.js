@@ -69,7 +69,7 @@
   const reportEl = $("#ds-report");
   let reportShown = false, report = null;
   function openReport() {
-    report = DSReport.build(E, scenario());
+    report = DSReport.build(E, scenario(), { hourly: hourly() });
     $("#ds-report-body").innerHTML = DSReport.html(report);
     if (!reportEl.open) reportEl.showModal();
   }
@@ -83,6 +83,61 @@
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   });
   $("#ds-report-print").addEventListener("click", () => window.print());
+  $("#ds-report-compare").addEventListener("click", () => { reportEl.close(); openCompare(); });
+
+  // ── Comparar escenarios ───────────────────────────────
+  // Dos turnos enteros (escenario + plantilla en cada lado), jugados en segundo plano, con su coste
+  const cmpEl = $("#ds-compare");
+  const COST_KEY = "ds-cost-hour";
+  function hourly() {
+    let v = NaN; try { v = Number(localStorage.getItem(COST_KEY)); } catch (e) {}
+    return v > 0 ? v : (L.cost ? L.cost.hourly : 18);
+  }
+  const cmpCache = {};
+  let cmpJob = 0;
+  const cmpScenarios = () => SCN.concat(custom ? [custom] : []);
+  const cmpOptions = (id) => (id === "importado" && custom ? { seed: custom.seed, shift: custom.shift, routeWeights: custom.weights, staff: {} } : DSScenarios.options(L, id));
+  function openCompare() {
+    const opts = cmpScenarios().map((s) => `<option value="${s.id}">${esc(s.name)}</option>`).join("");
+    const modes = DSCompare.STAFF_MODES.map((m) => `<option value="${m.id}">${m.name}</option>`).join("");
+    for (const side of ["a", "b"]) {
+      $(`#ds-cmp-${side}-sc`).innerHTML = opts; $(`#ds-cmp-${side}-st`).innerHTML = modes;
+      $(`#ds-cmp-${side}-sc`).value = scenarioId;
+    }
+    // por defecto: el turno de ahora con su plantilla frente a la plantilla mínima para el corte
+    $("#ds-cmp-a-st").value = "scenario"; $("#ds-cmp-b-st").value = "min";
+    $("#ds-cmp-cost").value = hourly();
+    if (!cmpEl.open) cmpEl.showModal();
+    runCompare();
+  }
+  function runCompare() {
+    const side = (k) => ({ sc: $(`#ds-cmp-${k}-sc`).value, mode: $(`#ds-cmp-${k}-st`).value });
+    const a = side("a"), b = side("b"), job = ++cmpJob, out = $("#ds-cmp-out");
+    const name = (x) => `${cmpScenarios().find((s) => s.id === x.sc).name}, ${x.mode === "min" ? "plantilla mínima" : "su plantilla"}`;
+    const get = (x) => {
+      const key = x.sc + ":" + x.mode + (x.sc === "importado" ? ":" + custom.desc : "");
+      if (!cmpCache[key]) {
+        const opts = cmpOptions(x.sc);
+        cmpCache[key] = inWorker({ type: "full", L, opts, mode: x.mode }, () => DSCompare.run(L, opts, x.mode));
+        cmpCache[key].catch(() => delete cmpCache[key]);
+      }
+      return cmpCache[key];
+    };
+    out.innerHTML = `<p class="ds-sim-note"><span class="ds-spin"></span>Jugando los dos turnos enteros…</p>`;
+    Promise.all([get(a), get(b)]).then(([ra, rb]) => {
+      if (job !== cmpJob) return;
+      out.innerHTML = DSCompare.html(ra, rb, hourly(), [name(a), name(b)]);
+    }).catch((e) => { if (job === cmpJob) out.innerHTML = `<p class="ds-sim-note is-bad">No se ha podido comparar: ${esc(e.message || e)}</p>`; });
+  }
+  $("#ds-compare-btn").addEventListener("click", openCompare);
+  $("#ds-compare-close").addEventListener("click", () => cmpEl.close());
+  for (const id of ["#ds-cmp-a-sc", "#ds-cmp-a-st", "#ds-cmp-b-sc", "#ds-cmp-b-st"]) $(id).addEventListener("change", runCompare);
+  $("#ds-cmp-cost").addEventListener("change", (e) => {
+    const v = Number(String(e.target.value).replace(",", "."));
+    if (!(v > 0)) { e.target.value = hourly(); return; }
+    try { localStorage.setItem(COST_KEY, String(v)); } catch (err) {}
+    runCompare();
+  });
   // se imprime siempre en claro, aunque la página esté en oscuro
   let themeBeforePrint = null;
   window.addEventListener("beforeprint", () => { themeBeforePrint = document.documentElement.dataset.theme; document.documentElement.dataset.theme = "light"; });
@@ -477,7 +532,9 @@
   const VERSION = (document.querySelector('script[src^="ui.js"]')?.getAttribute("src").match(/\?.*/) || [""])[0];
   const simKey = (st) => (st ? MARSHALS.concat(["receive", "induct", "stow", "pick", "ps"]).map((k) => st[k]).join(",") : "");
   function project(msg) {
-    const local = () => DSEngine.project(msg.L, msg.opts, msg.actions, msg.atStep, msg.staff);
+    return inWorker(msg, () => DSEngine.project(msg.L, msg.opts, msg.actions, msg.atStep, msg.staff));
+  }
+  function inWorker(msg, local) {
     return new Promise((resolve, reject) => {
       let w = null;
       try { w = new Worker("whatif-worker.js" + VERSION); } catch (e) { w = null; }

@@ -154,6 +154,10 @@ const DS_LAYOUT = {
     ],
   },
 
+  // Coste de una hora de trabajo por persona, en euros, para el coste del turno y por paquete.
+  // Es un valor de ejemplo: se cambia desde la app (comparar escenarios).
+  cost: { hourly: 18 },
+
   // High value: paquetes de valor alto (electrónica, joyería...) que se siguen uno a uno durante el turno.
   // Proporción y valores inventados.
   highValue: { share: 0.004, min: 300, max: 2500 },

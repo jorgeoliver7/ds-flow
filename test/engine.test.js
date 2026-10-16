@@ -322,3 +322,38 @@ test("todos los archivos de la página llevan la misma versión, para que el nav
   assert.equal(versions.size, 1, `versiones: ${[...versions].join(", ")}`);
   assert.ok([...versions][0], "con ?v=");
 });
+
+test("el equipo de noche para en el descanso y el sort sigue después", () => {
+  const SC = require("../scenarios.js");
+  const E = DSEngine.create(L, SC.options(L, "normal")), S = E.S;
+  const [b] = S.plan.breaks;
+  assert.equal(E.clock(b.from), "04:00"); assert.equal(E.clock(b.to), "04:30");
+  assert.equal(E.clock(S.plan.sortStart), "01:00");
+  while (S.t < S.plan.sortStart - 1) E.step();
+  assert.equal(S.received, 0, "antes de la 01:00 no se descarga");
+  while (S.t < b.from + 2) E.step();
+  const stowed = S.stowed, f0 = E.forecast().sortEnd;
+  while (S.t < b.to - 1) E.step();
+  assert.ok(S.stowed - stowed < 20, "en el descanso no se hace stow (solo llega lo que ya iba de camino)");
+  assert.ok(Math.abs(E.forecast().sortEnd - f0) < 8, "la previsión ya contaba con el descanso");
+  assert.equal(E.planAt(b.to - 1), E.planAt(b.from), "el plan se queda plano");
+  run(E, 900);
+  assert.ok(S.sortDoneAt <= S.plan.cutoff, "y el sort acaba antes del corte");
+});
+
+test("comparar escenarios juega dos turnos enteros y calcula su coste", () => {
+  const SC = require("../scenarios.js"), C = require("../compare.js"), R = require("../report.js");
+  const o = SC.options(L, "personal");
+  const a = C.run(L, o, "scenario"), b = C.run(L, o, "min");
+  assert.ok(a.over && b.over);
+  assert.ok(a.routesLate > 0 && b.routesLate === 0, "con la plantilla mínima salen todas a tiempo");
+  assert.ok(b.staff.stow > a.staff.stow);
+  const rows = C.rows(a, b, 20), cost = rows.find((r) => r.label === "Coste del turno");
+  assert.equal(cost.va, a.laborHours * 20);
+  assert.match(C.verdict(a, b, 20, ["A", "B"]), /^B cuesta .* que A: saca a tiempo \d+ rutas más/);
+  // el informe también lleva el coste
+  const E = DSEngine.create(L, o);
+  run(E, 900);
+  const k = R.build(E, SC.list[2], { hourly: 20 }).kpis.find((x) => x[0] === "Coste por paquete");
+  assert.ok(k && /€$/.test(k[1]));
+});

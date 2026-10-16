@@ -21,7 +21,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=DM+Mono:wght@400;500&family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;1,9..144,400&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="ds-flow.css?v=2026-10-16.2">
+  <link rel="stylesheet" href="ds-flow.css?v=2026-10-16.3">
 </head>
 <body>
   <header class="ds-top">
@@ -48,6 +48,7 @@
         <p class="ds-scenario-desc" id="ds-scenario-desc"></p>
         <label class="ds-btn ds-btn--ghost ds-file ds-present-hide" title="Simula una noche concreta. El archivo se lee en tu navegador y no se sube a ningún sitio.">Importar CSV<input type="file" id="ds-import" accept=".csv,text/csv"></label>
         <a class="ds-link ds-present-hide" href="ejemplo-turno.csv" download>Plantilla</a>
+        <button class="ds-btn ds-btn--ghost ds-present-hide" id="ds-compare-btn" title="Juega dos turnos enteros y compara el resultado y el coste">Comparar</button>
         <button class="ds-btn" id="ds-report-btn">Informe del turno</button>
       </div>
 
@@ -190,23 +191,48 @@
   <dialog class="ds-report" id="ds-report" aria-label="Informe de fin de turno">
     <div id="ds-report-body"></div>
     <div class="ds-report-actions">
+      <button class="ds-btn" id="ds-report-compare">Comparar con otro escenario</button>
       <button class="ds-btn ds-btn--out" id="ds-report-csv">Descargar CSV</button>
       <button class="ds-btn" id="ds-report-print">Imprimir o guardar PDF</button>
       <button class="ds-btn ds-btn--ghost" id="ds-report-close">Cerrar</button>
     </div>
   </dialog>
 
+  <dialog class="ds-report ds-cmp" id="ds-compare" aria-label="Comparar escenarios">
+    <header class="ds-report-head">
+      <p class="ds-eyebrow">Comparar escenarios</p>
+      <h2>Dos turnos enteros, lado a lado</h2>
+      <p class="ds-hint">Elige un escenario y una plantilla en cada lado. Se juega cada turno completo, con su semilla, y se compara el resultado y lo que cuesta en horas trabajadas.</p>
+    </header>
+    <div class="ds-cmp-pick">
+      <fieldset><legend>A</legend>
+        <label class="ds-field">Escenario <select id="ds-cmp-a-sc"></select></label>
+        <label class="ds-field">Plantilla <select id="ds-cmp-a-st"></select></label>
+      </fieldset>
+      <fieldset><legend>B</legend>
+        <label class="ds-field">Escenario <select id="ds-cmp-b-sc"></select></label>
+        <label class="ds-field">Plantilla <select id="ds-cmp-b-st"></select></label>
+      </fieldset>
+      <label class="ds-field ds-cmp-cost" title="Valor de ejemplo: pon el que quieras para tus cuentas">Coste por hora y persona <input type="number" id="ds-cmp-cost" min="1" step="0.5" inputmode="decimal"> €</label>
+    </div>
+    <div id="ds-cmp-out" aria-live="polite"></div>
+    <div class="ds-report-actions">
+      <button class="ds-btn ds-btn--ghost" id="ds-compare-close">Cerrar</button>
+    </div>
+  </dialog>
+
   <!-- ?v= obliga al navegador a descargar la versión nueva tras cada cambio (GitHub Pages guarda en caché 10 min): súbelo en cada versión -->
-  <script src="layout.js?v=2026-10-16.2"></script>
-  <script src="crew.js?v=2026-10-16.2"></script>
-  <script src="engine.js?v=2026-10-16.2"></script>
-  <script src="scenarios.js?v=2026-10-16.2"></script>
-  <script src="report.js?v=2026-10-16.2"></script>
-  <script src="importcsv.js?v=2026-10-16.2"></script>
-  <script src="charts.js?v=2026-10-16.2"></script>
-  <script src="render.js?v=2026-10-16.2"></script>
-  <script src="tour.js?v=2026-10-16.2"></script>
-  <script src="ui.js?v=2026-10-16.2"></script>
-  <script src="crewui.js?v=2026-10-16.2"></script>
+  <script src="layout.js?v=2026-10-16.3"></script>
+  <script src="crew.js?v=2026-10-16.3"></script>
+  <script src="engine.js?v=2026-10-16.3"></script>
+  <script src="scenarios.js?v=2026-10-16.3"></script>
+  <script src="report.js?v=2026-10-16.3"></script>
+  <script src="compare.js?v=2026-10-16.3"></script>
+  <script src="importcsv.js?v=2026-10-16.3"></script>
+  <script src="charts.js?v=2026-10-16.3"></script>
+  <script src="render.js?v=2026-10-16.3"></script>
+  <script src="tour.js?v=2026-10-16.3"></script>
+  <script src="ui.js?v=2026-10-16.3"></script>
+  <script src="crewui.js?v=2026-10-16.3"></script>
 </body>
 </html>

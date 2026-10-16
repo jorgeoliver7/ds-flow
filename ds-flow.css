@@ -564,3 +564,25 @@ button, select, input { font: inherit; color: inherit; }
   .ds-tour-dots { display: none; }
 }
 @media (prefers-reduced-motion: reduce) { .ds-tour-spot, .ds-tour-card { transition: none; } }
+
+/* ── Comparar escenarios ── */
+.ds-cmp { width: min(820px, calc(100vw - 32px)); }
+.ds-cmp .ds-hint { margin: 0 0 14px; font-size: 13px; color: var(--ds-fg-soft); }
+.ds-cmp-pick { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px; }
+.ds-cmp-pick fieldset { display: grid; gap: 8px; margin: 0; padding: 12px 14px; border: 1px solid var(--ds-line); border-radius: 14px; }
+.ds-cmp-pick legend { padding: 0 6px; font-family: var(--ds-font-display); font-size: 18px; font-weight: 600; color: var(--ds-accent); }
+.ds-cmp-pick .ds-field { justify-content: space-between; }
+.ds-cmp-pick .ds-field select { max-width: 64%; }
+.ds-cmp-cost { grid-column: 1 / -1; justify-content: flex-start !important; }
+.ds-cmp-cost input { width: 80px; padding: 6px 10px; border-radius: 999px; border: 1px solid var(--ds-line); background: var(--ds-bg-2); color: var(--ds-fg); font: inherit; }
+.ds-cmp-table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 8px; }
+.ds-cmp-table th { text-align: left; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--ds-fg-muted); padding: 0 8px 8px; }
+.ds-cmp-table td { padding: 8px; border-top: 1px solid var(--ds-line); font-family: var(--ds-font-mono); }
+.ds-cmp-table td:first-child { font-family: var(--ds-font-sans); color: var(--ds-fg-soft); }
+.ds-cmp-table td.is-ok { color: var(--ds-ok); font-weight: 500; }
+.ds-cmp-verdict { margin: 14px 0 0; padding: 10px 14px; border-radius: 12px; background: var(--ds-bg-2); border-left: 3px solid var(--ds-accent); font-size: 14px; line-height: 1.45; }
+@media (max-width: 640px) {
+  .ds-cmp-pick { grid-template-columns: 1fr; }
+  .ds-cmp-table { font-size: 12px; }
+  .ds-cmp-table td { padding: 6px 4px; }
+}

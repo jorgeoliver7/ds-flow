@@ -1117,7 +1117,9 @@
     function summary() {
       const m = metrics();
       return { t: S.t, over: S.over, sortEnd: S.sortDoneAt, cutoff: S.plan.cutoff, endAt: S.endAt, routesLate: m.routesLate, routesOut: m.routesOut,
-        routesTotal: m.routesTotal, rollover: m.rollover, laborHours: m.laborHours, pph: m.pph, waves: m.waves.map((w) => ({ n: w.n, depart: w.depart, late: w.late })) };
+        routesTotal: m.routesTotal, rollover: m.rollover, laborHours: m.laborHours, pph: m.pph, waves: m.waves.map((w) => ({ n: w.n, depart: w.depart, late: w.late })),
+        volume: S.plan.volume, received: S.received, dispatched: S.dispatched, dpmo: m.quality.dpmo, missortRate: m.quality.missortRate,
+        staff: { ...S.staff0 }, clock0: L.shiftStart };
     }
 
     // plantilla mínima calculada antes de empezar, para comparar en el informe con la que hubo
