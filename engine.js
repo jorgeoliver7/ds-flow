@@ -82,17 +82,30 @@
   }
 
   const avg = (a) => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : 0);
+  // Paso fijo de la simulación (3 s simulados). Con paso fijo la misma partida se puede repetir exacta,
+  // que es lo que usa project() para simular el resto del turno con otro reparto.
+  const DT = 0.05;
+  // Rendimiento real medio frente al nominal, medido con la simulación: el sort pierde algo en esperas y en
+  // el reparto entre pasillos, y el pick en cambiar de ruta y de carro.
+  // Inducción y carros pierden más porque trabajan a golpes, según llegan los carros.
+  const FLOW = { receive: 0.92, induct: 0.9, stow: 0.95, ps: 1 }, PICK_FLOW = 0.95;
   const trim = (a, n) => { if (a.length > n) a.splice(0, a.length - n); };
 
   // opts: { seed, shift (sustituye a L.shift), staff (plantilla inicial), routeWeights (volumen por ruta), hooks: { log(msg, kind), fx(kind, data), now() } }
   function create(L, opts) {
     opts = opts || {};
+    const spec = { L, opts: { ...opts, hooks: undefined } };
     // un turno puede empezar a otra hora (p. ej. el de tarde): el reloj de toda la partida se mueve con él
     const SH = opts.shift || L.shift;
     if (SH.start) { const [h, m] = SH.start.split(":").map(Number); L = { ...L, shiftStart: h * 60 + m }; }
     const hooks = Object.assign({ log() {}, fx() {}, now: () => 0 }, opts.hooks);
     const rand = rng(opts.seed == null ? 7 : opts.seed);
+    // los high value salen de su propio generador: marcarlos no cambia el resto de la partida
+    const hvRand = rng((opts.seed == null ? 7 : opts.seed) * 31 + 5), HV = L.highValue || { share: 0 };
     const D = L.docks, R = L.receive, I = L.induct, CV = L.conveyor, ST = L.stow, P = L.pick, Y = L.yard, PS = L.problem, Q = L.quality;
+    // marshals: un plano sin ellos (p. ej. uno antiguo) funciona igual, con cero personas
+    const DM = D.marshal || { staff: 0, checkInMin: 0, selfCheckInMin: 0, unloadNoMarshal: 1 };
+    const YM = Y.marshal || { staff: 0, before: 15, parkNoMarshal: 1, loadNoMarshal: 1 };
     const geo = geometry(L);
     const at = (hhmm) => toShift(hhmm, L.shiftStart);
 
@@ -103,7 +116,10 @@
       trucks: [], vans: [], transit: [],
       inductQ: [], moves: [], nextCart: 1,
       acc: { induct: 0, pick: 0 },
-      staff: { receive: R.staff, induct: I.staff, stow: ST.staff, pick: P.staff, ps: PS.staff, ...opts.staff },
+      staff: { receive: R.staff, induct: I.staff, stow: ST.staff, pick: P.staff, ps: PS.staff, dock: DM.staff, yard: YM.staff, ...opts.staff },
+      gate: [],                 // camiones en la puerta, esperando el check-in o un muelle libre
+      noMarshal: { dock: 0, yard: 0 }, // minutos en los que hacía falta un marshal y no había
+      steps: 0, actions: [],    // pasos dados y acciones del usuario, para poder repetir la partida
       totals: {}, procMin: {},  // paquetes y minutos-persona de cada proceso en todo el turno
       aisles: ST.aisles.map((a, i) => ({ ...a, idx: i, queue: [], acc: 0, done: 0 })),
       routes: [],
@@ -114,7 +130,7 @@
       nextTruck: 101, nextVan: 1, waitLogged: {},
       // productividad real de cada proceso: varía alrededor de 1 durante el turno
       eff: { receive: 1, induct: 1, stow: 1, pick: 1, ps: 1 },
-      flow: { receive: [], induct: [], stow: [], pick: [], load: [], ps: [] }, // paquetes por minuto
+      flow: { receive: [], induct: [], stow: [], pick: [], load: [], ps: [], dock: [], yard: [] }, // unidades por minuto
       // calidad
       psQ: [], psAcc: 0, psTimes: [], conveyorDown: false,
       issues: { damaged: 0, noLabel: 0, missort: 0 }, writtenOff: 0, unsorted: 0,
@@ -122,6 +138,7 @@
       laborMin: 0,              // minutos-persona trabajados
       cyc: { dockInduct: [0, 0], inductStow: [0, 0], stowPick: [0, 0], pickOut: [0, 0] },
       events: [],
+      hv: [],                   // paquetes high value del turno, para seguirlos uno a uno
     };
 
     // Rutas: N por pasillo, con peso de volumen distinto para que unas se llenen antes
@@ -163,14 +180,15 @@
     S.plan.volume = S.plan.trucks.reduce((s, x) => s + x.units, 0);
     S.plan.firstTruck = Math.min(...S.plan.trucks.map((x) => x.at));
     S.plan.waves.forEach((w) => w.routes.forEach((n) => (S.routes[n - 1].wave = w)));
-    S.plan.pickStart = Math.min(...S.plan.waves.map((w) => w.at)) - SH.pickLead;
+    S.plan.firstWave = Math.min(...S.plan.waves.map((w) => w.at));
+    S.plan.pickStart = S.plan.firstWave - SH.pickLead;
     S.plan.end = Math.max(...S.plan.waves.map((w) => w.deadline + SH.maxWait));
 
     // Plantilla con nombre: quién está en cada proceso (opts.crew = false la desactiva)
     const crew = DSCrew && opts.crew !== false ? DSCrew.create(L, S, { seed: opts.seed }) : null;
     S.crew = crew;
     const by = (who) => (who ? ` por ${who.name} (${who.id})` : "");
-    const PNAME = { receive: "la zona de carros", induct: "inducción", stow: "stow", pick: "pick", ps: "problem solve" };
+    const PNAME = { receive: "la zona de carros", induct: "inducción", stow: "stow", pick: "pick", ps: "problem solve", dock: "dock marshal", yard: "yard marshal" };
     // los cambios de plantilla (planificador, recomendaciones) se reflejan en quién trabaja dónde
     function syncCrew() {
       if (!crew) return;
@@ -220,7 +238,7 @@
       trim(S.events, 40);
       hooks.log(msg, kind);
     }
-    function hist(p, msg) { p.hist.push({ t: S.t, msg }); }
+    function hist(p, msg) { p.hist.push({ t: S.t, msg }); p.seenAt = S.t; }
 
     const SIZES = [["Sobre", 0.3, "S"], ["Pequeño", 1.2, "S"], ["Mediano", 3.5, "M"], ["Oversize", 9, "O"]];
     function newPkg(truck) {
@@ -234,9 +252,13 @@
         truck: truck.id, sorted: false, where: "truck", hist: [], unloadedAt: S.t,
       };
       hist(p, `Descargado del camión ${truck.id} · muelle ${truck.dock + 1}`);
+      if (hvRand() < HV.share) {
+        p.hv = true; p.value = Math.round((HV.min + hvRand() ** 2 * (HV.max - HV.min)) / 5) * 5;
+        S.hv.push(p);
+      }
       S.pkgs.set(id, p);
       if (S.pkgs.size > 60000) {
-        for (const [k, v] of S.pkgs) { if (S.pkgs.size < 50000) break; if (v.where === "delivered" && k !== S.tracked) S.pkgs.delete(k); }
+        for (const [k, v] of S.pkgs) { if (S.pkgs.size < 50000) break; if (v.where === "delivered" && k !== S.tracked && !v.hv) S.pkgs.delete(k); }
       }
       return p;
     }
@@ -333,18 +355,47 @@
       const free = [...Array(D.count).keys()].filter((i) => !used.has(i));
       return free.length ? free[Math.floor(rand() * free.length)] : -1;
     }
-    function dockTruck(id, units, dock) {
+    function dockTruck(id, units, dock, who) {
       const t = { id, dock, units, total: units, state: "arriving", p: 0, acc: 0 };
       S.trucks.push(t);
-      log(`Camión ${t.id} atraca en el muelle ${dock + 1} con ${units} paquetes`, "in");
+      log(`Camión ${t.id} atraca en el muelle ${dock + 1} con ${units} paquetes${who ? ` · check-in${by(who)}` : ""}`, "in");
       return t;
     }
-    // Camión extra, fuera del plan
+    // Camión extra, fuera del plan: pasa por el check-in como los demás
     function addTruck() {
-      const dock = freeDock();
-      if (dock < 0) return `Los ${D.count} muelles están ocupados`;
+      if (S.trucks.length + S.gate.length >= D.count) return `Los ${D.count} muelles están ocupados`;
       const units = Math.round(D.truckUnits * (0.7 + rand() * 0.6));
-      dockTruck("T-" + S.nextTruck++, units, dock);
+      toGate({ id: "T-" + S.nextTruck++, units });
+    }
+    // Llegada a la puerta. Sin dock marshal el conductor se coordina como puede y tarda bastante más en atracar
+    function toGate(g) {
+      g.at = S.t; S.gate.push(g);
+      if (!S.staff.dock) log(`Camión ${g.id} en la puerta sin dock marshal: espera unos ${DM.selfCheckInMin} min para atracar`, "warn");
+    }
+    // Check-in: cada dock marshal atiende un camión cada vez, por orden de llegada; luego el camión atraca si hay muelle
+    function checkIn() {
+      const n = S.staff.dock;
+      let busy = S.gate.filter((g) => g.checkEnd != null && !g.checked && !g.self).length;
+      for (const g of S.gate) {
+        if (g.checkEnd != null) continue;
+        if (!n) { g.self = true; g.checkEnd = S.t + DM.selfCheckInMin; continue; }
+        if (busy >= n) break;
+        g.checkEnd = S.t + DM.checkInMin / pf("dock"); busy++;
+      }
+      for (const g of S.gate) {
+        if (g.checked || g.checkEnd == null || S.t < g.checkEnd) continue;
+        g.checked = true;
+        if (!g.self) { const who = count("dock"); g.by = who; }
+      }
+      for (const g of S.gate) {
+        if (!g.checked) continue;
+        const dock = freeDock();
+        if (dock < 0) { if (!S.waitLogged[g.id]) { S.waitLogged[g.id] = true; log(`Camión ${g.id} espera muelle libre`, "warn"); } break; }
+        g.done = true;
+        if (g.plan) { g.plan.state = "docked"; g.plan.dockedAt = S.t; }
+        dockTruck(g.id, g.units, dock, g.by);
+      }
+      S.gate = S.gate.filter((g) => !g.done);
     }
 
     function freePad() {
@@ -373,6 +424,7 @@
       const pad = freePad();
       if (pad < 0) return "El yard está lleno";
       const deadline = wave ? wave.deadline : S.t + SH.loadWindow;
+      if (!S.staff.yard && wave && !S.waitLogged["yard" + wave.n]) { S.waitLogged["yard" + wave.n] = true; log(`Oleada ${wave.n} sin yard marshal: las furgonetas tardan en colocarse y cargan más despacio`, "warn"); }
       const v = { id: "V-" + String(S.nextVan++).padStart(3, "0"), route: route.n, pad, state: "arriving", p: 0, acc: 0,
         loaded: 0, incoming: 0, items: [], calledAt: S.t, deadline, manual: !wave };
       route.van = v; route.deadline = deadline;
@@ -384,7 +436,9 @@
     function depart(v) {
       const r = S.routes[v.route - 1];
       v.state = "leaving"; v.p = 0; r.van = null; r.out += v.loaded;
-      r.dispatched = true; r.departAt = S.t; r.late = S.t > v.deadline;
+      // sale en su minuto: si espera hasta el límite por paquetes que no llegan, sale a tiempo y esos se quedan (rollover)
+      r.dispatched = true; r.departAt = S.t; r.late = S.t > v.deadline + 0.5;
+      if (S.staff.yard) count("yard");
       hooks.fx("depart", { van: v, route: r });
       S.vanTimes.push(S.t - v.calledAt); trim(S.vanTimes, 100);
       S.routesOut++; if (r.late) S.routesLate++;
@@ -406,25 +460,26 @@
 
     // ── Paso de simulación (dt en minutos simulados) ──────
     function step(dt) {
-      S.t += dt;
+      dt = dt || DT;
+      S.t += dt; S.steps++;
       syncCrew();
 
-      // Camiones del plan: atracan a su hora si hay muelle libre; si no, esperan
+      // Camiones del plan: llegan a la puerta a su hora, pasan el check-in y atracan si hay muelle libre
       if (S.auto) for (const pt of S.plan.trucks) {
         if (pt.state !== "pending" || S.t < pt.at) continue;
         if (pt.delay && pt.eta === pt.at) { pt.eta = pt.at + pt.delay; log(`Camión ${pt.id} viene con ${pt.delay} min de retraso (llega a las ${clock(L, pt.eta)})`, "bad"); }
         if (S.t < pt.eta) continue;
-        const dock = freeDock();
-        if (dock < 0) { if (!S.waitLogged[pt.id]) { S.waitLogged[pt.id] = true; log(`Camión ${pt.id} espera muelle libre`, "warn"); } continue; }
-        pt.state = "docked"; pt.dockedAt = S.t;
-        dockTruck(pt.id, pt.units, dock);
+        pt.state = "gate";
+        toGate({ id: pt.id, units: pt.units, plan: pt });
       }
+      checkIn();
 
       // Camiones
       for (const t of S.trucks) {
         if (t.state === "arriving") { t.p += dt / VEH; if (t.p >= 1) { t.state = "unloading"; t.p = 1; } }
         else if (t.state === "unloading") {
-          t.acc += (D.unloadRate / 60) * dt;
+          // sin dock marshal nadie ordena muelles ni carros vacíos: la descarga va más lenta
+          t.acc += (D.unloadRate / 60) * dt * (S.staff.dock ? 1 : DM.unloadNoMarshal);
           while (t.acc >= 1 && t.units > 0) {
             t.acc--; t.units--; S.received++;
             const p = newPkg(t), x = geo.dockX(t.dock);
@@ -537,9 +592,10 @@
       // Furgonetas
       for (const v of S.vans) {
         const r = S.routes[v.route - 1];
-        if (v.state === "arriving") { v.p += dt / VEH; if (v.p >= 1) { v.state = "loading"; v.p = 1; } }
+        // el yard marshal coloca cada furgoneta en su plaza; sin él tardan varios minutos en aparcar y cargan más despacio
+        if (v.state === "arriving") { v.p += dt / (S.staff.yard ? VEH : YM.parkNoMarshal); if (v.p >= 1) { v.state = "loading"; v.p = 1; } }
         else if (v.state === "loading") {
-          v.acc = cap(v.acc, (Y.loadRate / 60) * dt);
+          v.acc = cap(v.acc, (Y.loadRate / 60) * dt * (S.staff.yard ? 1 : YM.loadNoMarshal));
           while (v.acc >= 1 && r.cart.length) {
             v.acc--; v.incoming++;
             const p = r.cart.shift(), c = geo.cartCenter(r), pc = geo.padCenter(v.pad);
@@ -585,7 +641,11 @@
       // Horas trabajadas y deriva de la productividad (cada 10 min)
       // el equipo de sort trabaja de noche (hasta acabar el sort) y el de pick desde la primera oleada
       const sortCrew = S.t >= S.plan.firstTruck - 15 && S.sortDoneAt == null, pickCrew = S.t >= S.plan.pickStart && !S.over;
-      const active = { receive: sortCrew, induct: sortCrew, stow: sortCrew, pick: pickCrew, ps: sortCrew || pickCrew };
+      const on = marshalsOn();
+      const active = { receive: sortCrew, induct: sortCrew, stow: sortCrew, pick: pickCrew, ps: sortCrew || pickCrew, dock: on.dock, yard: on.yard };
+      for (const k of ["dock", "yard"]) if (on[k] && !S.staff[k]) S.noMarshal[k] += dt;
+      // el dock marshal acaba cuando ha atracado y se ha descargado el último camión del plan
+      if (S.dockDoneAt == null && S.t > S.plan.firstTruck && S.plan.trucks.every((x) => x.state === "docked") && !S.gate.length && !S.trucks.some((t) => t.units > 0)) S.dockDoneAt = S.t;
       for (const k in active) if (active[k]) { S.procMin[k] = (S.procMin[k] || 0) + S.staff[k] * dt; S.laborMin += S.staff[k] * dt; }
       if (crew) crew.tick(active, dt);
       if (Math.floor(S.t / 10) !== Math.floor((S.t - dt) / 10)) {
@@ -594,7 +654,7 @@
       }
 
       // Fin del sort y fin del turno
-      if (S.sortDoneAt == null && S.plan.trucks.every((x) => x.state !== "pending") && !S.trucks.some((t) => t.units > 0) && S.unsorted === 0) {
+      if (S.sortDoneAt == null && S.plan.trucks.every((x) => x.state !== "pending") && !S.gate.length && !S.trucks.some((t) => t.units > 0) && S.unsorted === 0) {
         S.sortDoneAt = S.t;
         log(`Sort terminado a las ${clock(L, S.t)}${S.t <= S.plan.cutoff ? " · antes del corte" : " · DESPUÉS del corte"}`, S.t <= S.plan.cutoff ? "out" : "bad");
       }
@@ -613,6 +673,12 @@
       }
     }
 
+    // Cuándo hace falta cada marshal: el de dock mientras llegan y se descargan los camiones del plan,
+    // el de yard desde un rato antes de la primera oleada hasta que sale la última furgoneta
+    function marshalsOn() {
+      return { dock: S.t >= S.plan.firstTruck - 15 && S.dockDoneAt == null, yard: S.t >= S.plan.firstWave - YM.before && !S.over };
+    }
+
     // Paquetes de una ruta que van de camino a su carro de pick
     function inFlight(r) {
       for (const tr of S.transit) if (tr.dest === "cart" && tr.pkg.route === r.n) return true;
@@ -625,100 +691,270 @@
       return Math.round(S.plan.volume * Math.min(Math.max(f, 0), 1));
     }
 
-    // Capacidad nominal de clasificación (paq/min): el más lento entre inducción y stow
-    function sortCap(staff) {
-      staff = staff || S.staff;
-      return Math.min((I.rate * staff.induct * pf("induct")) / I.staff, (ST.rate * staff.stow * pf("stow")) / ST.staff) / 60;
+    // ── Previsión ─────────────────────────────────────────
+    const KEYS = ["receive", "induct", "stow", "pick", "ps", "dock", "yard"];
+    const ONES = Object.fromEntries(KEYS.map((k) => [k, 1]));
+    const sameStaff = (a, b) => KEYS.every((k) => (a[k] || 0) === (b[k] || 0));
+    // Ritmo de cada equipo (1 = el habitual). Con el reparto de ahora, el de la gente que está; con otro, el de
+    // la gente que entraría y saldría (no es lo mismo quitar de stow al más rápido que a alguien que acaba de llegar).
+    function factors(staff) {
+      if (!crew) return ONES;
+      if (!staff || sameStaff(staff, S.staff)) { const f = {}; for (const k of KEYS) f[k] = crew.factor(k); return f; }
+      return crew.preview(staff).factors;
+    }
+    // Capacidad nominal de cada proceso con un reparto (paq/h; problem solve, incidencias/h)
+    function capacity(staff, f) {
+      staff = staff || S.staff; f = f || factors(staff);
+      return {
+        receive: ((R.rate * staff.receive) / R.staff) * f.receive,
+        induct: ((I.rate * staff.induct) / I.staff) * f.induct,
+        stow: ((ST.rate * staff.stow) / ST.staff) * f.stow,
+        pick: ((P.rate * staff.pick) / P.staff) * f.pick,
+        ps: PS.uph * staff.ps * f.ps,
+      };
+    }
+    // Proceso que marca el ritmo del sort: el de menos capacidad entre carros, inducción y stow
+    function bottleneck(staff, f) {
+      const cap = capacity(staff, f);
+      const key = ["stow", "induct", "receive"].reduce((a, b) => (cap[b] < cap[a] ? b : a));
+      return { key, rate: cap[key], cap };
+    }
+    // Capacidad de clasificación (paq/min) con el rendimiento real medio
+    function sortCap(staff, f) {
+      const c = capacity(staff, f);
+      return Math.min(c.receive * FLOW.receive, c.induct * FLOW.induct, c.stow * FLOW.stow) / 60;
     }
 
-    // Hora prevista de fin del sort con el ritmo nominal de la plantilla.
-    // Modelo de flujo minuto a minuto: los camiones pendientes entran al ritmo de descarga desde su llegada
-    // y el sort va vaciando lo que hay a su capacidad. Así cuenta que al principio de la noche no hay trabajo.
-    function forecast(staff, capOverride) {
+    // Cuándo empieza a descargar cada camión que falta. El check-in va de uno en uno por dock marshal;
+    // sin dock marshal cada camión tarda más en atracar y descarga más despacio.
+    function feeds(staff, f) {
+      const n = staff.dock || 0, list = S.trucks.filter((t) => t.units > 0).map((t) => ({ from: S.t, left: t.units }));
+      const free = Array(n).fill(S.t);
+      S.gate.filter((g) => g.checkEnd != null && !g.checked && !g.self).slice(0, n).forEach((g, i) => (free[i] = g.checkEnd));
+      const arriving = S.gate.map((g) => ({ at: g.at, units: g.units, from: g.checked ? S.t : g.checkEnd != null ? g.checkEnd : null }))
+        .concat(S.plan.trucks.filter((x) => x.state === "pending").map((x) => ({ at: Math.max(x.eta, S.t), units: x.units, from: null })))
+        .sort((a, b) => a.at - b.at);
+      for (const a of arriving) {
+        let from = a.from;
+        if (from == null && !n) from = a.at + DM.selfCheckInMin;
+        else if (from == null) { free.sort((x, y) => x - y); from = free[0] = Math.max(a.at, free[0]) + DM.checkInMin / (f.dock || 1); }
+        list.push({ from: Math.max(from, S.t), left: a.units });
+      }
+      return { list, unload: (D.unloadRate / 60) * (n ? 1 : DM.unloadNoMarshal) };
+    }
+
+    // Problem solve como una cola: arr[i] son las incidencias que llegan en el minuto i desde ahora.
+    // Devuelve, para cada minuto, en qué minuto queda resuelto todo lo que ha llegado hasta entonces.
+    function psQueue(arr, perMin) {
+      const n = arr.length, A = new Float64Array(n), done = new Float64Array(n);
+      let a = 0, p = 0;
+      const Pd = new Float64Array(n);
+      for (let i = 0; i < n; i++) { a += arr[i]; A[i] = a; p = Math.min(a, p + perMin); Pd[i] = p; }
+      for (let i = 0, j = 0; i < n; i++) { if (j < i) j = i; while (j < n - 1 && Pd[j] < A[i] - 0.5) j++; done[i] = j; }
+      return done;
+    }
+    const horizon = () => Math.ceil(Math.max(S.plan.end + 240 - S.t, 120));
+    // Incidencias que aún pasarán por problem solve durante el sort: las que ya hay y las de lo que falta por clasificar
+    function psSortArrivals(arr, remaining, end) {
+      arr[0] += S.psQ.length + S.transit.filter((tr) => tr.dest === "ps").length;
+      const span = Math.max(1, Math.min(arr.length - 1, Math.ceil(end - S.t))), per = (remaining * (Q.damaged + Q.noLabel)) / span;
+      for (let i = 0; i < span; i++) arr[i] += per;
+    }
+
+    // Hora prevista de fin del sort con un reparto (o con el de ahora).
+    // Modelo de flujo minuto a minuto: los camiones pendientes entran al ritmo de descarga desde que pasan el check-in
+    // y el sort va vaciando lo que hay a su capacidad, la del proceso más lento entre carros, inducción y stow.
+    // Así cuenta que al principio de la noche no hay trabajo. Si problem solve va atrasado, el sort no acaba
+    // hasta que vuelven a inducción los paquetes que tenía.
+    function forecast(staff, capOverride, f) {
       if (S.sortDoneAt != null && !staff) return { sortEnd: S.sortDoneAt, done: true };
-      const future = S.plan.trucks.filter((x) => x.state === "pending");
-      const onDock = S.trucks.reduce((s, t) => s + t.units, 0);
-      const remaining = S.unsorted + onDock + future.reduce((s, x) => s + x.units, 0);
-      const cap = capOverride || sortCap(staff), unload = D.unloadRate / 60;
-      // lo que ya está en muelle se descarga en paralelo, un camión por muelle
-      const feeds = S.trucks.filter((t) => t.units > 0).map((t) => ({ from: S.t, left: t.units }))
-        .concat(future.map((x) => ({ from: Math.max(x.eta, S.t), left: x.units })));
+      staff = staff || S.staff; f = f || factors(staff);
+      const fd = feeds(staff, f), list = fd.list;
+      const remaining = S.unsorted + list.reduce((s, x) => s + x.left, 0);
+      const cap = capOverride || sortCap(staff, f);
       let backlog = S.unsorted, t = S.t, last = S.t;
-      while (feeds.some((f) => f.left > 0) || backlog > 0.5) {
-        for (const f of feeds) if (f.left > 0 && f.from <= t) { const n = Math.min(f.left, unload); f.left -= n; backlog += n; last = t + 1; }
+      while (list.some((x) => x.left > 0) || backlog > 0.5) {
+        for (const x of list) if (x.left > 0 && x.from <= t) { const n = Math.min(x.left, fd.unload); x.left -= n; backlog += n; last = t + 1; }
         backlog = Math.max(0, backlog - cap);
         t += 1;
         if (t - S.t > 1440) break;
       }
       // + recorrido del último paquete: muelle → carros → inducción → cinta → saca
-      const end = Math.max(t, last + 8);
-      return { sortEnd: remaining ? end : S.t, done: false, remaining };
+      let end = Math.max(t, last + 8), psDelay = 0;
+      if (remaining) {
+        const arr = new Float64Array(Math.max(horizon(), Math.ceil(end - S.t) + 60));
+        psSortArrivals(arr, remaining, end);
+        const i = Math.min(arr.length - 1, Math.ceil(end - S.t)), done = psQueue(arr, (capacity(staff, f).ps * FLOW.ps) / 60);
+        psDelay = Math.max(0, done[i] - i);
+        end += psDelay;
+      }
+      return { sortEnd: remaining ? end : S.t, done: false, remaining, lastUnload: last, psDelay };
     }
 
-    // Plantilla mínima para cerrar el sort con margen antes del corte y sacar las oleadas a tiempo.
-    // Usa el rendimiento real medio de una noche (95% del nominal, contando esperas y el reparto entre pasillos),
-    // no el del momento, para que no baile con el ruido.
+    // Previsión por oleada: cuándo acaba su pick, cuándo saldrían sus furgonetas y cuántos paquetes se quedarían.
+    // El pick va oleada a oleada; al hacerlo salen los missorts, que pasan por problem solve antes de volver a su saca:
+    // la furgoneta los espera hasta su hora límite y, si no llegan, sale sin ellos (rollover).
+    function waveForecast(staff, f) {
+      const cur = !staff || sameStaff(staff, S.staff);
+      staff = staff || S.staff; f = f || factors(staff);
+      const fc = forecast(cur ? null : staff, null, f), sortEnd = fc.sortEnd;
+      const c = capacity(staff, f), pickCap = (c.pick * PICK_FLOW) / 60;
+      const park = staff.yard ? VEH : YM.parkNoMarshal, load = (Y.loadRate / 60) * (staff.yard ? 1 : YM.loadNoMarshal);
+      const tw = totalWeight();
+      const future = S.plan.trucks.filter((x) => x.state === "pending").reduce((s, x) => s + x.units, 0) + S.gate.reduce((s, g) => s + g.units, 0) + S.trucks.reduce((s, t) => s + t.units, 0);
+      const arr = new Float64Array(horizon()), idx = (t) => Math.max(0, Math.min(arr.length - 1, Math.round(t - S.t)));
+      if (!fc.done && fc.remaining) psSortArrivals(arr, fc.remaining, sortEnd);
+      let cursor = S.t;
+      // plazas del yard: si la oleada anterior sigue cargando, parte de las furgonetas espera a que se libere una
+      const busy = [];
+      const out = S.plan.waves.map((w) => {
+        const routes = w.routes.map((n) => S.routes[n - 1]).filter((r) => !r.dispatched);
+        if (!routes.length) {
+          const all = w.routes.map((n) => S.routes[n - 1]);
+          return { n: w.n, done: true, late: all.filter((r) => r.late).length, depart: Math.max(...all.map((r) => r.departAt)), deadline: w.deadline, rollover: 0 };
+        }
+        const vols = routes.map((r) => r.bag.length + r.cart.length + r.upstream + (future * r.weight) / tw);
+        const pending = routes.some((r) => r.upstream) || future > 0;
+        const start = Math.max(cursor, w.at - SH.pickLead);
+        // lo que falta por recoger: lo que está en sacas, lo que aún no ha llegado y su parte de los camiones pendientes
+        const toPickVol = routes.reduce((s, r) => s + r.bag.length + r.upstream + (future * r.weight) / tw, 0);
+        // el equipo de pick trabaja oleada tras oleada; mientras espera los últimos paquetes del sort sigue con las siguientes
+        cursor = start + toPickVol / pickCap;
+        const pickDone = pending ? Math.max(cursor, sortEnd + 5) : cursor;
+        // missorts que saldrán al recoger las sacas de esta oleada
+        const a = idx(Math.max(start, S.t)), b = Math.max(a + 1, idx(pickDone)), mis = (toPickVol * Q.missort) / (b - a);
+        for (let i = a; i < b; i++) arr[i] += mis;
+        // cada furgoneta: plaza libre, aparcar, cargar su ruta y el último paquete hasta la plaza (o esperar a que acabe
+        // el pick). Pasado el límite más la espera máxima sale con lo que tenga y el resto se queda (rollover).
+        const latest = w.deadline + SH.maxWait;
+        busy.sort((x, y) => x - y);
+        let free = Y.pads - busy.filter((d) => d > w.at).length, roll = 0, k = 0;
+        const freed = busy.filter((d) => d > w.at);
+        const deps = routes.map((r, i) => {
+          const arrive = r.van ? r.van.calledAt : free-- > 0 ? w.at : freed[k++] ?? w.at + 30;
+          const loadEnd = Math.max(arrive + park, S.t) + vols[i] / load + 2;
+          const d = Math.min(Math.max(loadEnd, pickDone + 3), latest);
+          if (loadEnd > latest) roll += (loadEnd - latest) * load;
+          return d;
+        });
+        // lo que no se llega a recoger: por falta de pick o porque el sort aún no lo ha dejado en su saca
+        let short = cursor > latest ? (cursor - latest) * pickCap : 0;
+        if (pending && sortEnd > latest) short = Math.max(short, (sortEnd - latest) * sortCap(staff, f) * (routes.reduce((s, r) => s + r.weight, 0) / tw));
+        roll += Math.min(toPickVol, short);
+        busy.push(...deps);
+        return { n: w.n, done: false, pickDone, depart: Math.max(...deps), deadline: w.deadline, late: deps.filter((d) => d > w.deadline + 0.5).length, roll, a, b, mis };
+      });
+      const done = psQueue(arr, (c.ps * FLOW.ps) / 60), back = PS.handleMin + 3;
+      for (const w of out) {
+        if (w.done) continue;
+        let roll = w.roll, lastBack = w.pickDone;
+        for (let i = w.a; i < w.b; i++) { const t = S.t + done[i] + back; if (t > w.deadline) roll += w.mis; else lastBack = Math.max(lastBack, t); }
+        // la furgoneta espera los que vuelven antes de su límite
+        w.depart = Math.max(w.depart, Math.min(lastBack, w.deadline));
+        w.rollover = Math.round(roll);
+        delete w.a; delete w.b; delete w.mis; delete w.roll;
+      }
+      return out;
+    }
+
+    // Plantilla mínima para cerrar el sort con margen antes del corte, sacar las oleadas a tiempo y sin rollover
+    // de problem solve. Usa el rendimiento medio de una noche con el equipo habitual (no el del momento ni el de
+    // quién está hoy), para que no baile con el ruido.
     function crewNeeded(margin) {
       margin = margin == null ? 15 : margin;
-      const eff = 0.95, target = S.plan.cutoff - margin, sortDone = S.sortDoneAt != null;
-      const capI = (n) => (I.rate * n * eff) / I.staff / 60, capS = (n) => (ST.rate * n * eff) / ST.staff / 60;
-      const ends = (c) => forecast({ ...S.staff }, c).sortEnd;
+      const target = S.plan.cutoff - margin, sortDone = S.sortDoneAt != null;
       // el menor n que cumple, buscando de 1 a 60
       const least = (fits) => { let lo = 1, hi = 60; if (!fits(hi)) return null; while (lo < hi) { const m = (lo + hi) >> 1; if (fits(m)) hi = m; else lo = m + 1; } return lo; };
-      const staff = { ...S.staff };
-      let reachable = true;
+      // un marshal en dock y otro en yard: con uno basta para el check-in y las oleadas de esta estación
+      const staff = { ...S.staff, dock: DM.staff ? 1 : 0, yard: YM.staff ? 1 : 0 };
+      let reachable = true, goal = target;
       if (!sortDone) {
+        // cada proceso del sort por separado: la menor plantilla con la que no sería él quien retrase el corte
+        const capOf = (k, n) => (capacity({ ...staff, [k]: n }, ONES)[k] * FLOW[k]) / 60;
+        const ends = (c) => forecast(staff, c, ONES).sortEnd;
         // si ni con gente de sobra se llega (camiones tarde), se planifica para acabar cuanto antes
-        const floor = ends(1e9), goal = Math.max(target, floor + 5);
+        const floor = ends(1e9);
+        goal = Math.max(target, floor + 5);
         reachable = floor <= target;
-        staff.stow = least((n) => ends(capS(n)) <= goal) || 60;
-        staff.induct = least((n) => ends(capI(n)) <= goal) || 60;
-        // la zona de carros alimenta inducción en la misma proporción que la plantilla base
-        staff.receive = Math.max(1, Math.ceil((staff.induct * R.staff) / I.staff));
+        for (const k of ["stow", "induct", "receive"]) staff[k] = least((n) => ends(capOf(k, n)) <= goal) || 60;
       }
-      const lateWith = (n) => waveForecast({ ...staff, pick: n * eff * 0.95 }).reduce((s, w) => s + (w.done ? 0 : w.late), 0);
+      // problem solve: que no retrase el sort ni deje paquetes sin volver a su saca (con pick de sobra)
+      const psFits = (n) => {
+        const st = { ...staff, ps: n };
+        return (sortDone || forecast(st, null, ONES).sortEnd <= goal + 1) && waveForecast({ ...st, pick: 60 }, ONES).every((w) => w.done || !w.rollover);
+      };
+      staff.ps = least(psFits) || Math.max(PS.staff, S.staff.ps);
+      // en pick, el margen es un 5% de capacidad: la salida de una oleada depende de minutos
+      const lateWith = (n) => waveForecast({ ...staff, pick: n * 0.95 }, ONES).reduce((s, w) => s + (w.done ? 0 : w.late), 0);
       staff.pick = least((n) => lateWith(n) === 0) || 60;
       const total = (k) => k.reduce((s, x) => s + staff[x], 0);
-      return { staff, reachable, sortDone, sortEnd: sortDone ? S.sortDoneAt : forecast(staff).sortEnd, sort: total(["receive", "induct", "stow", "ps"]), pick: staff.pick };
+      return { staff, reachable, sortDone, sortEnd: sortDone ? S.sortDoneAt : forecast(staff, null, ONES).sortEnd,
+        sort: total(["receive", "induct", "stow", "ps"]), pick: staff.pick, marshals: total(["dock", "yard"]) };
+    }
+
+    // Reparto de n personas entre carros, inducción y stow que da más capacidad de sort: se va dando cada persona
+    // al proceso que va más corto, con el ritmo de los equipos de ahora
+    function splitSort(n) {
+      const f = factors(), per = { receive: (R.rate / R.staff) * f.receive * FLOW.receive, induct: (I.rate / I.staff) * f.induct * FLOW.induct, stow: (ST.rate / ST.staff) * f.stow * FLOW.stow };
+      const st = { receive: 1, induct: 1, stow: 1 };
+      for (let i = 3; i < n; i++) {
+        // a igualdad, donde ya hay gente (menos cambios)
+        const k = ["stow", "induct", "receive"].reduce((a, b) => (st[b] * per[b] < st[a] * per[a] - 1e-9 || (Math.abs(st[b] * per[b] - st[a] * per[a]) < 1e-9 && S.staff[b] > S.staff[a]) ? b : a));
+        st[k]++;
+      }
+      return { ...S.staff, ...st };
+    }
+    const SNAME = { receive: "la zona de carros", induct: "inducción", stow: "stow", pick: "pick", ps: "problem solve", dock: "dock marshal", yard: "yard marshal" };
+    // "Mueve 2 de stow a inducción" o, si hay más de un cambio, la lista de cambios
+    function movesText(to) {
+      const d = KEYS.filter((k) => to[k] !== S.staff[k]).map((k) => [k, to[k] - S.staff[k]]);
+      const out = d.filter((x) => x[1] < 0), inn = d.filter((x) => x[1] > 0);
+      if (out.length === 1 && inn.length === 1) return `Mueve ${inn[0][1]} de ${SNAME[out[0][0]]} a ${SNAME[inn[0][0]]}`;
+      return d.map(([k, v]) => `${SNAME[k]} ${v > 0 ? "+" : ""}${v}`).join(", ").replace(/^./, (c) => c.toUpperCase());
     }
 
     // Recomendación del momento, como la daría un responsable de turno: mover gente donde hace falta.
     // Devuelve null si no hay nada que mejorar. staff es el reparto propuesto, listo para aplicar.
     function advise() {
-      if (S.over || S.t < S.plan.firstTruck) return null;
-      const NAMES = { receive: "zona de carros", induct: "inducción", stow: "stow", pick: "pick", ps: "problem solve" };
-      // con el mismo descuento que la plantilla mínima: la previsión de pick es optimista con poco margen
-      const late = (st) => waveForecast({ ...st, pick: st.pick * 0.9 }).reduce((s, w) => s + (w.done ? 0 : w.late), 0);
+      if (S.over) return null;
+      // sin marshal no se para nada, pero todo va más lento: es lo primero que hay que cubrir
+      if (!S.staff.dock && DM.staff && S.t >= S.plan.firstTruck - 30 && S.dockDoneAt == null)
+        return { id: "add:dock", kind: "bad", staff: { ...S.staff, dock: 1 },
+          text: `No hay dock marshal: cada camión espera unos ${DM.selfCheckInMin} min en la puerta para atracar y descarga más despacio. Pon a una persona en el check-in.` };
+      if (!S.staff.yard && YM.staff && S.t >= S.plan.firstWave - YM.before - 30)
+        return { id: "add:yard", kind: "bad", staff: { ...S.staff, yard: 1 },
+          text: `No hay yard marshal para las oleadas: las furgonetas tardan unos ${YM.parkNoMarshal} min en colocarse y cargan más despacio. Pon a una persona en el yard.` };
+      if (S.t < S.plan.firstTruck) return null;
+      const late = (st) => waveForecast(st).reduce((s, w) => s + (w.done ? 0 : w.late), 0);
       if (S.sortDoneAt == null) {
-        const now = forecast().sortEnd;
-        // mejor reparto de n personas entre inducción y stow
-        const split = (n) => {
-          let best = null;
-          for (let i = 1; i < n; i++) {
-            const st = { ...S.staff, induct: i, stow: n - i }, end = forecast(st).sortEnd;
-            if (!best || end < best.end - 0.5) best = { st, end };
-          }
-          return best;
-        };
-        const pool = S.staff.induct + S.staff.stow;
-                // 1) repartir mejor la gente que ya hay
-        const best = split(pool);
-        if (best && best.end <= now - 10) {
-          const d = best.st.stow - S.staff.stow, [from, to] = d > 0 ? ["induct", "stow"] : ["stow", "induct"];
-          return { id: `move:${from}:${to}`, kind: now > S.plan.cutoff ? "bad" : "warn", staff: best.st,
-            text: `Mueve ${Math.abs(d)} de ${NAMES[from]} a ${NAMES[to]}: el sort acabaría a las ${clock(L, best.end)} en vez de a las ${clock(L, now)}.` };
+        const now = forecast().sortEnd, pool = S.staff.receive + S.staff.induct + S.staff.stow;
+        // 1) repartir mejor la gente que ya hay
+        const st = splitSort(pool);
+        if (!sameStaff(st, S.staff)) {
+          const end = forecast(st).sortEnd;
+          if (end <= now - 10) return { id: "move:" + KEYS.map((k) => st[k]).join(","), kind: now > S.plan.cutoff ? "bad" : "warn", staff: st,
+            text: `${movesText(st)}: el sort acabaría a las ${clock(L, end)} en vez de a las ${clock(L, now)}.` };
         }
         // 2) si aun así no se llega al corte, la menor cantidad de gente que hay que sumar
         if (now > S.plan.cutoff && forecast(null, 1e9).sortEnd <= S.plan.cutoff) {
           for (let extra = 1; extra <= 20; extra++) {
-            const opt = split(pool + extra);
-            if (opt.end > S.plan.cutoff - 5) continue;
-            return { id: "add:sort", kind: "bad", staff: opt.st,
-              text: `No se llega al corte de las ${clock(L, S.plan.cutoff)}: ${extra === 1 ? "falta 1 persona" : `faltan ${extra} personas`}. Con inducción ${opt.st.induct} y stow ${opt.st.stow} el sort acabaría a las ${clock(L, opt.end)} (horas extra o gente de otro turno).` };
+            const opt = splitSort(pool + extra), end = forecast(opt).sortEnd;
+            if (end > S.plan.cutoff - 5) continue;
+            return { id: "add:sort", kind: "bad", staff: opt,
+              text: `No se llega al corte de las ${clock(L, S.plan.cutoff)}: ${extra === 1 ? "falta 1 persona" : `faltan ${extra} personas`}. Con carros ${opt.receive}, inducción ${opt.induct} y stow ${opt.stow} el sort acabaría a las ${clock(L, end)} (horas extra o gente de otro turno).` };
           }
         }
       }
-      // 3) pick: refuerzo si alguna oleada va a salir tarde
+      // 3) problem solve: si va a dejar paquetes sin volver a su saca
+      const roll = (st) => waveForecast(st).reduce((s, w) => s + (w.done ? 0 : w.rollover), 0);
+      if (S.t >= S.plan.pickStart - 60 && roll(S.staff) >= 5) {
+        for (let extra = 1; extra <= 3; extra++) {
+          const st = { ...S.staff, ps: S.staff.ps + extra };
+          if (roll(st) < 5) return { id: "add:ps", kind: "warn", staff: st,
+            text: `Problem solve no da abasto: unos ${roll(S.staff)} paquetes se quedarían sin volver a su saca antes de que salga su furgoneta. Con ${extra} persona${extra > 1 ? "s" : ""} más (${st.ps}) llegarían a tiempo.` };
+        }
+      }
+      // 4) pick: refuerzo si alguna oleada va a salir tarde
       if (S.t >= S.plan.pickStart - 30 && late(S.staff)) {
         const need = crewNeeded(0).staff.pick;
         // si ya no hay plantilla razonable que lo arregle, no se recomienda nada
@@ -728,31 +964,30 @@
       return null;
     }
 
-    // Previsión por oleada: cuándo acaba su pick y cuándo saldrían sus furgonetas
-    function waveForecast(staff) {
+    // Horas-persona que quedan de turno con un reparto, según cuándo trabaja cada equipo
+    function laborLeft(staff) {
       staff = staff || S.staff;
-      const sortEnd = forecast(staff === S.staff ? null : staff).sortEnd;
-      const pickCap = ((P.rate * staff.pick * pf("pick")) / P.staff) / 60;
-      const tw = S.routes.reduce((s, r) => s + r.weight, 0);
-      const future = S.plan.trucks.filter((x) => x.state === "pending").reduce((s, x) => s + x.units, 0) + S.trucks.reduce((s, t) => s + t.units, 0);
-      let cursor = S.t;
-      return S.plan.waves.map((w) => {
-        const routes = w.routes.map((n) => S.routes[n - 1]).filter((r) => !r.dispatched);
-        if (!routes.length) {
-          const all = w.routes.map((n) => S.routes[n - 1]);
-          return { n: w.n, done: true, late: all.filter((r) => r.late).length, depart: Math.max(...all.map((r) => r.departAt)), deadline: w.deadline };
-        }
-        const vols = routes.map((r) => r.bag.length + r.cart.length + r.upstream + (future * r.weight) / tw);
-        const pending = routes.some((r) => r.upstream) || future > 0;
-        const start = Math.max(cursor, w.at - SH.pickLead);
-        // lo que falta por recoger: lo que está en sacas, lo que aún no ha llegado y su parte de los camiones pendientes
-        const toPickVol = routes.reduce((s, r) => s + r.bag.length + r.upstream + (future * r.weight) / tw, 0);
-        let pickDone = start + toPickVol / pickCap;
-        if (pending) pickDone = Math.max(pickDone, sortEnd + 5);
-        cursor = pickDone;
-        const depart = Math.max(w.at + 1 + Math.max(...vols) / (Y.loadRate / 60), pickDone + 3);
-        return { n: w.n, done: false, pickDone, depart, deadline: w.deadline, late: depart > w.deadline ? routes.length : 0 };
-      });
+      const f = factors(staff), cur = sameStaff(staff, S.staff);
+      const fc = forecast(cur ? null : staff, null, f), ws = waveForecast(staff, f);
+      const end = Math.max(...ws.map((w) => w.depart)), sortEnd = fc.done ? S.t : fc.sortEnd;
+      const span = (a, b) => Math.max(0, b - Math.max(a, S.t)), s0 = S.plan.firstTruck - 15;
+      const dockEnd = S.dockDoneAt != null || fc.done ? S.t : fc.lastUnload;
+      const m = { receive: span(s0, sortEnd), induct: span(s0, sortEnd), stow: span(s0, sortEnd), ps: span(s0, end), pick: span(S.plan.pickStart, end),
+        dock: span(s0, dockEnd), yard: span(S.plan.firstWave - YM.before, end) };
+      return KEYS.reduce((s, k) => s + (staff[k] || 0) * m[k], 0) / 60;
+    }
+
+    // Qué cambiaría un reparto ahora mismo, al instante: fin del sort, oleadas, cuello de botella,
+    // horas-persona y quién entraría o saldría de cada proceso
+    function whatIf(staff) {
+      const fNow = factors(), fThen = factors(staff), pv = crew ? crew.preview(staff) : { joins: [], leaves: [] };
+      const sum = (ws, k) => ws.reduce((s, w) => s + (w[k] || 0), 0);
+      const side = (st, f, cur) => {
+        const fc = forecast(cur ? null : st, null, f), ws = waveForecast(cur ? null : st, f);
+        return { sortEnd: fc.sortEnd, sortDone: !!fc.done, psDelay: fc.psDelay || 0, waves: ws, late: sum(ws, "late"), rollover: sum(ws, "rollover"),
+          bottleneck: bottleneck(st, f), labor: laborLeft(st) };
+      };
+      return { now: side(S.staff, fNow, true), then: side(staff, fThen, false), joins: pv.joins, leaves: pv.leaves };
     }
 
     function stowRate() {
@@ -789,6 +1024,10 @@
         const real = hourRate(key);
         return { key, name, staff: S.staff[key], uph: real / S.staff[key], target: cfg.uph, rate: real, cap: rate(cfg.rate || cfg.uph * cfg.staff, key, cfg) };
       });
+      // marshals: no mueven paquetes, se mira si están cuando hacen falta y lo que tienen esperando
+      const on = marshalsOn();
+      procs.push({ key: "dock", name: "Dock marshal", marshal: true, staff: S.staff.dock, needed: on.dock, queue: S.gate.length, done: S.totals.dock || 0 });
+      procs.push({ key: "yard", name: "Yard marshal", marshal: true, staff: S.staff.yard, needed: on.yard, queue: S.vans.filter((v) => v.state === "arriving").length, done: S.totals.yard || 0 });
       const cycle = Object.entries(S.cyc).map(([k, [sum, n]]) => ({ key: k, min: n ? sum / n : null }));
       const laborHours = S.laborMin / 60;
       return {
@@ -810,15 +1049,73 @@
       return n;
     }
 
+    // ── Acciones del usuario ──────────────────────────────
+    // Todo lo que cambia la partida desde fuera pasa por aquí y queda apuntado con el paso en que se hizo:
+    // así project() puede repetir la partida exacta hasta ahora y seguirla con otro reparto.
+    function apply(a) {
+      switch (a.type) {
+        case "staff": {
+          const ch = KEYS.filter((k) => a.staff[k] != null && a.staff[k] !== S.staff[k]);
+          if (!ch.length) return;
+          const txt = ch.map((k) => `${SNAME[k]} ${S.staff[k]}→${a.staff[k]}`).join(", ");
+          for (const k of ch) S.staff[k] = Math.max(0, Math.min(60, a.staff[k]));
+          log(`${a.why || "Cambio de plantilla"}: ${txt}`, a.why ? "out" : "warn");
+          return;
+        }
+        case "truck": return addTruck();
+        case "van": return callVan(a.route ? S.routes[a.route - 1] : null);
+        case "auto": S.auto = !!a.on; return;
+        case "move": {
+          const e = crew && crew.people.find((x) => x.id === a.id);
+          if (!e) return "Esa persona no está en la plantilla";
+          const c = crew.move(e, a.to || null);
+          if (c) log(`${c.name} (${c.id}) ${c.from && c.to ? `pasa de ${PNAME[c.from]} a ${PNAME[c.to]}` : c.to ? `entra en ${PNAME[c.to]}` : "queda disponible"}`, "warn");
+          return;
+        }
+      }
+    }
+    function act(a) { S.actions.push({ ...a, step: S.steps }); return apply(a); }
+
+    // Resumen de la partida para comparar repartos
+    function summary() {
+      const m = metrics();
+      return { t: S.t, over: S.over, sortEnd: S.sortDoneAt, cutoff: S.plan.cutoff, endAt: S.endAt, routesLate: m.routesLate, routesOut: m.routesOut,
+        routesTotal: m.routesTotal, rollover: m.rollover, laborHours: m.laborHours, pph: m.pph, waves: m.waves.map((w) => ({ n: w.n, depart: w.depart, late: w.late })) };
+    }
+
     // plantilla mínima calculada antes de empezar, para comparar en el informe con la que hubo
     S.crewPlan = crewNeeded();
     S.staff0 = { ...S.staff };
 
     return {
-      S, L, SH, geo, posOf, step, addTruck, callVan, freePad, laneOf, stagingCount, rate, loads, stowRate, inPlantCount,
+      S, L, SH, geo, posOf, step, freePad, laneOf, stagingCount, rate, loads, stowRate, inPlantCount,
       toPick, forecast, metrics, planAt, sortCap, at, waveForecast, hourRate, log, crewNeeded, advise,
+      capacity, bottleneck, factors, laborLeft, whatIf, marshalsOn, summary, apply, spec,
+      // acciones (quedan apuntadas para poder repetir la partida)
+      addTruck: () => act({ type: "truck" }),
+      callVan: (route) => act({ type: "van", route: route ? route.n : null }),
+      setStaff: (staff, why) => act({ type: "staff", staff, why }),
+      setAuto: (on) => act({ type: "auto", on: !!on }),
+      moveWorker: (id, to) => act({ type: "move", id, to: to || null }),
       clock: (t) => clock(L, t),
     };
+  }
+
+  // Simula el resto del turno: repite la partida exacta hasta el paso `atStep` (misma semilla y mismas acciones)
+  // y desde ahí sigue con el reparto `staff` (o con el que había) hasta que sale la última furgoneta.
+  function project(L, opts, actions, atStep, staff) {
+    const E = create(L, { ...opts, hooks: undefined }), S = E.S;
+    const acts = (actions || []).slice().sort((a, b) => a.step - b.step);
+    let i = 0;
+    while (S.steps < atStep) {
+      while (i < acts.length && acts[i].step <= S.steps) E.apply(acts[i++]);
+      E.step(DT);
+    }
+    while (i < acts.length) E.apply(acts[i++]);
+    if (staff) E.setStaff(staff, "Simulación");
+    const limit = S.plan.end + 240;
+    while (!S.over && S.t < limit) E.step(DT);
+    return E.summary();
   }
 
   function clock(L, t) {
@@ -827,7 +1124,7 @@
   }
   function fmtMin(m) { return m < 1 ? "< 1 min" : m < 90 ? Math.round(m) + " min" : (m / 60).toFixed(1) + " h"; }
 
-  const api = { create, geometry, posOf, rng, clock, fmtMin, avg, toShift };
+  const api = { create, project, geometry, posOf, rng, clock, fmtMin, avg, toShift, DT };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.DSEngine = api;
 })(typeof window !== "undefined" ? window : globalThis);

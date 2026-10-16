@@ -96,6 +96,8 @@
         <button data-zone="pick">5 · Pick por rutas</button>
         <button data-zone="yard">6 · Yard</button>
         <button data-zone="problem">7 · Problem solve</button>
+        <button data-zone="marshal:dock">8 · Dock marshal</button>
+        <button data-zone="marshal:yard">9 · Yard marshal</button>
       </nav>
 
       <div class="ds-insights">
@@ -122,6 +124,11 @@
         <h2>Centro de control</h2>
       </div>
 
+      <div class="ds-ctabs ds-present-hide" role="tablist" aria-label="Centro de control">
+        <button role="tab" aria-selected="true" data-ctab="search">Buscar paquete</button>
+        <button role="tab" aria-selected="false" data-ctab="hv">High Values<b id="ds-hv-count">0</b></button>
+      </div>
+
       <form class="ds-track ds-present-hide" id="ds-track-form" role="search">
         <input id="ds-search" type="text" placeholder="Rastrear paquete · DS00000000" autocomplete="off" spellcheck="false" aria-label="Código de paquete">
         <button class="ds-btn" type="submit">Buscar</button>
@@ -129,6 +136,7 @@
       </form>
 
       <div class="ds-card ds-detail ds-present-hide" id="ds-detail" aria-live="polite"></div>
+      <div class="ds-card ds-detail ds-present-hide" id="ds-hv" hidden></div>
 
       <div class="ds-kpis" id="ds-kpis"></div>
 

@@ -36,8 +36,8 @@
     }));
     S = E.S;
     S.speed = prev ? prev.speed : Number($("#ds-speed").value) / 60;
-    S.paused = false; S.selected = null; S.tracked = null; draft = null; advice = { k: null }; ignored = {};
-    S.auto = $("#ds-auto").checked;
+    S.paused = false; S.selected = null; S.tracked = null; draft = null; advice = { k: null }; ignored = {}; sim = null; simAcc = 0;
+    if (S.auto !== $("#ds-auto").checked) E.setAuto($("#ds-auto").checked);
     V = DSRender.create(E, canvas);
     V.resize(); V.readColors();
     pauseBtn.textContent = "❚❚ Pausa"; pauseBtn.setAttribute("aria-pressed", "false");
@@ -103,7 +103,8 @@
   canvas.addEventListener("click", (e) => {
     const h = V.hit(...V.local(e));
     if (h && h.kind === "pkg") { track(h.id); return; }
-    S.selected = h; renderDetail();
+    S.selected = h;
+    if (ctab !== "search") setCtab("search"); else renderDetail();
   });
   canvas.addEventListener("mousemove", (e) => { canvas.style.cursor = V.hit(...V.local(e)) ? "pointer" : "default"; });
 
@@ -111,8 +112,77 @@
     if (!S.pkgs.get(id)) { toast("No encuentro ese paquete"); return; }
     S.tracked = id; S.selected = { kind: "pkg", id };
     $("#ds-search").value = id;
-    renderDetail();
+    if (ctab !== "search") setCtab("search"); else renderDetail();
   }
+
+  // ── High Values ───────────────────────────────────────
+  // Cada paquete de valor alto del turno: dónde está ahora, desde cuándo y si hay que ir a buscarlo
+  let ctab = "search", hvFilter = "all";
+  function setCtab(t) {
+    ctab = t;
+    document.querySelectorAll("[data-ctab]").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.ctab === t)));
+    $("#ds-track-form").hidden = t !== "search"; $("#ds-detail").hidden = t !== "search"; $("#ds-hv").hidden = t !== "hv";
+    if (t === "hv") renderHV(); else renderDetail();
+  }
+  document.querySelectorAll("[data-ctab]").forEach((b) => b.addEventListener("click", () => setCtab(b.dataset.ctab)));
+
+  const HV_DEST = { receive: "Del muelle a la zona de carros", induct: "De camino a inducción", aisle: "En el conveyor", bag: "Entrando en su saca",
+    ps: "De camino a problem solve", cart: "Al carro de pick", van: "A la furgoneta" };
+  function hvWhere(p) {
+    const r = S.routes[p.route - 1];
+    switch (p.where) {
+      case "truck": return `Camión ${p.truck}`;
+      case "transit": return HV_DEST[p.tr && p.tr.dest] || "En movimiento";
+      case "staging": return `Carro ${p.cartId} · zona de carros`;
+      case "moving": return `Carro ${p.cartId} hacia inducción`;
+      case "induct": return "Cola de inducción";
+      case "aisle": return `Pasillo ${ST.aisles[r.aisle].id} · esperando stow`;
+      case "bag": { const b = S.routes[p.bag - 1]; return `Saca ${b.code} · pasillo ${ST.aisles[b.aisle].id}${b !== r ? " · no es la suya" : ""}`; }
+      case "ps": return "Problem solve";
+      case "cart": return `Carro de pick de ${r.code}`;
+      case "van": return `Furgoneta ${p.van} · plaza ${(S.vans.find((v) => v.id === p.van)?.pad ?? -1) + 1 || "—"}`;
+      case "route": return `En reparto · ${r.town}`;
+      case "delivered": return "Entregado";
+      case "writtenoff": return "Dado de baja";
+    }
+    return p.where;
+  }
+  // out: ya salió · ok: en el flujo · warn: incidencia o en la saca equivocada · bad: su furgoneta se fue sin él, o dado de baja
+  function hvState(p) {
+    if (p.where === "route" || p.where === "delivered") return "out";
+    if (p.where === "writtenoff" || S.routes[p.route - 1].dispatched) return "bad";
+    if (p.where === "ps" || (p.tr && p.tr.dest === "ps") || (p.where === "bag" && p.bag !== p.route)) return "warn";
+    return "ok";
+  }
+  const HV_ORDER = { bad: 0, warn: 1, ok: 2, out: 3 };
+  const HV_FILTERS = [["all", "Todos"], ["in", "En planta"], ["alert", "Con aviso"], ["out", "Ya salieron"]];
+  function renderHV() {
+    const el = $("#ds-hv"), all = S.hv.map((p) => ({ p, st: hvState(p) }));
+    if (!all.length) { el.innerHTML = `<p class="ds-hint">Los high value aparecen aquí en cuanto se descargan del camión: unos ${Math.round(S.plan.volume * (L.highValue?.share || 0))} esta noche.</p>`; return; }
+    const n = (f) => all.filter(f).length, value = all.reduce((s, x) => s + x.p.value, 0);
+    const pass = { all: () => true, in: (x) => x.st === "ok" || x.st === "warn", alert: (x) => x.st === "bad" || x.st === "warn", out: (x) => x.st === "out" }[hvFilter];
+    const list = all.filter(pass).sort((a, b) => HV_ORDER[a.st] - HV_ORDER[b.st] || (S.routes[a.p.route - 1].wave?.at ?? 0) - (S.routes[b.p.route - 1].wave?.at ?? 0) || b.p.value - a.p.value);
+    const alerts = n((x) => x.st === "bad" || x.st === "warn");
+    el.innerHTML = `<div class="ds-hv-sum">
+        <div><span>Del turno</span><strong>${all.length}</strong></div>
+        <div><span>En planta</span><strong>${n((x) => x.st === "ok" || x.st === "warn")}</strong></div>
+        <div><span>Salieron</span><strong>${n((x) => x.st === "out")}</strong></div>
+        <div><span>Con aviso</span><strong class="${alerts ? "is-bad" : ""}">${alerts}</strong></div></div>
+      <p class="ds-hint">${num(value)} € declarados en total. Pulsa uno para ver su historial y seguirlo en el mapa (marco dorado).</p>
+      <div class="ds-hv-filters">${HV_FILTERS.map(([k, l]) => `<button class="ds-chip${hvFilter === k ? " is-on" : ""}" data-hvf="${k}">${l}</button>`).join("")}</div>
+      <div class="ds-hv-list"><table><thead><tr><th>Paquete</th><th>Ruta</th><th>Dónde está</th></tr></thead><tbody>${list.map(({ p, st }) => {
+        const r = S.routes[p.route - 1], w = r.wave;
+        return `<tr data-hv="${p.id}"><td class="ds-mono">${p.id}<small>${num(p.value)} €</small></td>
+          <td class="ds-mono">${r.code}<small>${r.dispatched ? `salió ${clock(r.departAt)}` : w ? `sale ${clock(w.at)}` : "—"}</small></td>
+          <td><i class="ds-sem is-${st === "out" ? "idle" : st}"></i>${esc(hvWhere(p))}<small>${st === "bad" && p.where !== "writtenoff" ? "su furgoneta ya salió · " : ""}desde las ${clock(p.seenAt)}</small></td></tr>`;
+      }).join("") || `<tr><td colspan="3" class="ds-hint">Ninguno con este filtro.</td></tr>`}</tbody></table></div>`;
+  }
+  function onHV(e) {
+    const f = e.target.closest("[data-hvf]"); if (f) { hvFilter = f.dataset.hvf; renderHV(); return; }
+    const r = e.target.closest("tr[data-hv]"); if (r) { setCtab("search"); track(r.dataset.hv); }
+  }
+  $("#ds-hv").addEventListener("pointerdown", onHV);
+  $("#ds-hv").addEventListener("click", (e) => { if (e.detail === 0) onHV(e); });
 
   // ── Centro de control ─────────────────────────────────
   function toast(msg) {
@@ -149,14 +219,20 @@
     if (worst && worst.m > 6) al.push([worst.m > 15 ? "bad" : "warn", `Cuello de botella en ${worst.name}: ${Math.round(worst.m)} min de cola`]);
     const overdue = S.vans.filter((v) => v.state === "loading" && S.t > v.deadline);
     if (overdue.length) al.push(["bad", `${overdue.length} furgoneta${overdue.length > 1 ? "s" : ""} fuera de su ventana de salida`]);
-    const waiting = S.plan.trucks.filter((x) => x.state === "pending" && S.t >= x.eta).length;
+    const waiting = S.gate.filter((g) => g.checked).length;
     if (waiting) al.push(["warn", `${waiting} camión${waiting > 1 ? "es esperan" : " espera"} muelle libre`]);
+    for (const p of m.processes) if (p.marshal && p.needed && !p.staff) al.unshift(["bad", p.key === "dock"
+      ? "Sin dock marshal: los camiones tardan más en atracar y descargan más despacio"
+      : "Sin yard marshal en las oleadas: las furgonetas tardan en colocarse y salen más tarde"]);
     if (E.freePad() < 0) al.push(["warn", "Yard completo: no caben más furgonetas"]);
     if (m.routesLate) al.push(["warn", `${m.routesLate} ruta${m.routesLate > 1 ? "s salieron" : " salió"} tarde`]);
     if (S.over) al.unshift(["ok", `Turno terminado a las ${clock(S.endAt)}`]);
+    const hvLeft = S.hv.filter((p) => hvState(p) === "bad" && p.where !== "writtenoff").length;
+    if (hvLeft) al.unshift(["bad", `${hvLeft} high value se ${hvLeft > 1 ? "han quedado" : "ha quedado"} sin su furgoneta: búscalos en la pestaña High Values`]);
+    $("#ds-hv-count").textContent = S.hv.length;
     for (const p of m.processes) {
       const st = procStatus(p);
-      if (st === "bad" && p.key !== "ps") al.push(["warn", `${p.name} rinde al ${Math.round((p.uph / p.target) * 100)}% del objetivo (${Math.round(p.uph)} de ${p.target} UPH)`]);
+      if (st === "bad" && p.key !== "ps" && !p.marshal) al.push(["warn", `${p.name} rinde al ${Math.round((p.uph / p.target) * 100)}% del objetivo (${Math.round(p.uph)} de ${p.target} UPH)`]);
     }
     if (S.conveyorDown) al.unshift(["bad", "Conveyor parado: no se induce nada hasta que vuelva a funcionar"]);
     if (m.quality.psOpen > 25) al.push([m.quality.psOpen > 60 ? "bad" : "warn", `${m.quality.psOpen} paquetes esperando en problem solve`]);
@@ -177,8 +253,8 @@
   const STATUS = { truck: "En el camión", transit: "En movimiento", staging: "En la zona de carros", moving: "Carro de camino a inducción", induct: "Esperando inducción", aisle: "En el conveyor, esperando stow",
     bag: "En la saca", ps: "En problem solve", writtenoff: "Dado de baja", cart: "En el carro de pick", van: "Cargado en furgoneta", route: "En reparto", delivered: "Entregado" };
 
-  function staffCtl(key) {
-    return `<div class="ds-staff"><span>Personal</span><button data-staff="${key}" data-d="-1" aria-label="Quitar persona">−</button><b>${S.staff[key]}</b><button data-staff="${key}" data-d="1" aria-label="Añadir persona">+</button></div>`;
+  function staffCtl(key, label) {
+    return `<div class="ds-staff"><span>${label || "Personal"}</span><button data-staff="${key}" data-d="-1" aria-label="Quitar persona">−</button><b>${S.staff[key]}</b><button data-staff="${key}" data-d="1" aria-label="Añadir persona">+</button></div>`;
   }
   const stats = (rows) => `<ul class="ds-stats">${rows.map(([k, v]) => `<li><span>${k}</span><b>${v}</b></li>`).join("")}</ul>`;
   const head = (code, title) => `<h3><span class="ds-code">${code}</span>${title}</h3>`;
@@ -197,8 +273,8 @@
       const p = S.pkgs.get(s.id); if (!p) { S.selected = null; return renderDetail(); }
       const r = S.routes[p.route - 1];
       const ISSUE = { damaged: "Dañado", noLabel: "Etiqueta ilegible", missort: "Mal clasificado" };
-      el.innerHTML = head("PKG", p.id) +
-        stats([["Estado", STATUS[p.where] || p.where], ...(p.issue ? [["Incidencia", `<span class="is-warn">${ISSUE[p.issue]}</span>`]] : []), ["Grupo", R.groups[p.group].id], ["Ruta", p.sorted ? `${r.code} · ${r.town}` : "Pendiente de inducción"], ["CP destino", p.cp], ["Tamaño", `${p.size} · ${p.weight} kg`]]) +
+      el.innerHTML = head("PKG", p.id + (p.hv ? '<span class="ds-hv-tag">HIGH VALUE</span>' : "")) +
+        stats([["Estado", STATUS[p.where] || p.where], ...(p.issue ? [["Incidencia", `<span class="is-warn">${ISSUE[p.issue]}</span>`]] : []), ["Grupo", R.groups[p.group].id], ["Ruta", p.sorted ? `${r.code} · ${r.town}` : "Pendiente de inducción"], ["CP destino", p.cp], ["Tamaño", `${p.size} · ${p.weight} kg`], ...(p.hv ? [["Valor declarado", `${num(p.value)} €`]] : [])]) +
         `<ol class="ds-timeline">${p.hist.slice().reverse().map((h) => `<li><time>${clock(h.t)}</time>${esc(h.msg)}</li>`).join("")}</ol>`;
     } else if (s.kind === "lane") {
       const l = S.lanes[s.id], waiting = l.closed.reduce((t, c) => t + c.items.length, 0);
@@ -227,6 +303,18 @@
       el.innerHTML = head("OUT", `Furgoneta ${v.id}`) + `<p>Ruta ${r.code} hacia ${r.town}, plaza ${v.pad + 1} del yard.</p>` +
         stats([["Estado", { arriving: "Entrando al yard", loading: "Cargando", leaving: "Saliendo a reparto" }[v.state]], ["Cargados", v.loaded], ["Por cargar", r.cart.length + E.toPick(r)],
           ["Tiempo en yard", fmtMin(S.t - v.calledAt)], ["Salida a tiempo hasta", clock(v.deadline)]]);
+    } else if (s.kind === "marshal") {
+      const dock = s.id === "dock", M = dock ? D.marshal : Y.marshal, on = E.marshalsOn()[s.id], n = S.staff[s.id];
+      const who = S.crew ? S.crew.byProc[s.id].map((e) => `${esc(e.name)} (${e.id})`).join(", ") : "";
+      const now = !n ? (on ? '<span class="is-bad">Sin cubrir</span>' : "Sin cubrir") : on ? "En su puesto" : "Fuera de su horario";
+      const rows = dock
+        ? [["Ahora", now], ["Quién", who || "—"], ["En la puerta", `${S.gate.length} camión${S.gate.length === 1 ? "" : "es"}`],
+          ["Check-in por camión", n ? `${M.checkInMin} min` : `unos ${M.selfCheckInMin} min sin dock marshal`], ["Camiones recibidos", S.totals.dock || 0],
+          ["Horario", `desde las ${clock(S.plan.firstTruck - 15)} hasta el último camión`]]
+        : [["Ahora", now], ["Quién", who || "—"], ["Aparcando", S.vans.filter((v) => v.state === "arriving").length + " furgonetas"],
+          ["Aparcar", n ? "1 min" : `unos ${M.parkNoMarshal} min sin yard marshal`], ["Furgonetas despachadas", S.totals.yard || 0],
+          ["Horario", `desde las ${clock(S.plan.firstWave - M.before)}, durante las oleadas`]];
+      el.innerHTML = head(M.code, M.name) + `<p>${M.desc}</p>` + stats(rows) + staffCtl(s.id, M.name);
     } else if (s.id === "conveyor") {
       el.innerHTML = head("CNV", "Conveyor") + `<p>Lleva cada paquete desde inducción hasta la boca del pasillo de su ruta.</p>` +
         stats([["En la cinta", S.transit.filter((t) => t.belt).length]]);
@@ -241,7 +329,7 @@
         rows = [["Por resolver", q.psOpen], ["Resolución media", q.psAvg == null ? "—" : fmtMin(q.psAvg)], ["Dados de baja", q.writtenOff], ["Capacidad", Math.round(E.rate(L.problem.uph * S.staff.ps, "ps", L.problem)) + " paq/h"]];
       }
       if (s.id === "yard") rows = [["Furgonetas", `${S.vans.length}/${Y.pads}`], ["Tiempo medio en yard", S.vanTimes.length ? fmtMin(avg(S.vanTimes)) : "—"], ["Salidas", S.routesOut]];
-      el.innerHTML = head(cfg.code, cfg.name) + `<p>${cfg.desc}</p>` + stats(rows) + (s.id !== "yard" ? staffCtl(s.id === "problem" ? "ps" : s.id) : "");
+      el.innerHTML = head(cfg.code, cfg.name) + `<p>${cfg.desc}</p>` + stats(rows) + (s.id !== "yard" ? staffCtl(s.id === "problem" ? "ps" : s.id) : staffCtl("yard", "Yard marshal"));
     }
   }
 
@@ -249,7 +337,7 @@
   const detailEl = $("#ds-detail");
   function onDetail(e) {
     const b = e.target.closest("button"); if (!b) return;
-    if (b.dataset.staff) { const k = b.dataset.staff; S.staff[k] = Math.max(1, Math.min(60, S.staff[k] + Number(b.dataset.d))); }
+    if (b.dataset.staff) { const k = b.dataset.staff; E.setStaff({ ...S.staff, [k]: Math.max(minStaff(k), Math.min(60, S.staff[k] + Number(b.dataset.d))) }); }
     if (b.dataset.call) { const err = E.callVan(S.routes[Number(b.dataset.call) - 1]); if (err) toast(err); }
     renderDetail();
   }
@@ -261,7 +349,10 @@
   let draft = null;
   const QUEUE = { receive: () => E.stagingCount(), induct: () => S.inductQ.length, stow: () => S.aisles.reduce((s, a) => s + a.queue.length, 0), pick: () => S.routes.reduce((s, r) => s + E.toPick(r), 0), ps: () => S.psQ.length };
   // Semáforo: solo cuenta cuando el proceso tiene trabajo (si está parado por falta de paquetes no es culpa suya)
+  // los marshals se pueden quitar (para ver qué pasa sin ellos); un proceso de paquetes no se queda vacío
+  const MARSHALS = ["dock", "yard"], minStaff = (k) => (MARSHALS.includes(k) ? 0 : 1);
   function procStatus(p) {
+    if (p.marshal) return !p.needed ? "idle" : p.staff ? "ok" : "bad";
     // problem solve va según las incidencias que lleguen: se mira su cola, no su UPH
     if (p.key === "ps") { const q = QUEUE.ps(); return !q ? "idle" : q > 25 ? "bad" : q > 10 ? "warn" : "ok"; }
     // con menos de 5 min de cola el proceso va por delante del trabajo: si rinde poco es por esperas, no por lento
@@ -273,7 +364,7 @@
   const sameStaff = (a, b) => Object.keys(a).every((k) => a[k] === b[k]);
 
   // Recomendación del momento y plantilla mínima: se recalculan cada 2 min de turno, no en cada fotograma
-  const PNAME = { receive: "carros", induct: "inducción", stow: "stow", pick: "pick", ps: "PS" };
+  const PNAME = { receive: "carros", induct: "inducción", stow: "stow", pick: "pick", ps: "PS", dock: "dock", yard: "yard" };
   let advice = { k: null, adv: null, need: null }, ignored = {};
   function adviceNow() {
     const k = Math.floor(S.t / 2) + ":" + Object.values(S.staff).join(",");
@@ -285,58 +376,139 @@
   }
   const crewTxt = (st, keys) => keys.map((k) => `${PNAME[k]} ${st[k]}`).join(" · ");
 
+  const n0 = (v) => num(Math.round(v));
+  const dec1 = (v) => v.toFixed(1).replace(".", ",");
+  const signed = (v, f) => (v > 0 ? "+" : v < 0 ? "−" : "±") + f(Math.abs(v));
+  // Fila de un marshal: no tiene UPH; se mira si está cuando hace falta y lo que tiene esperando
+  function marshalRow(p, staff, ctl) {
+    const st = procStatus(p), M = p.key === "dock" ? D.marshal : Y.marshal;
+    const when = p.needed ? (p.staff ? "en su puesto" : '<b class="is-bad">sin cubrir</b>')
+      : p.key === "dock" ? (S.dockDoneAt != null ? "terminado" : `desde ${clock(S.plan.firstTruck - 15)}`)
+      : S.over ? "terminado" : `desde ${clock(S.plan.firstWave - M.before)}`;
+    const q = p.queue ? (p.key === "dock" ? `${p.queue} en puerta` : `${p.queue} aparcando`) : "—";
+    return `<tr class="is-marshal"><td><i class="ds-sem is-${st}"></i>${p.name}</td>${ctl}<td colspan="2" class="ds-when">${when}</td><td>${q}</td></tr>`;
+  }
+  // Comparación de la estimación al instante: ahora frente al reparto que se está probando
+  function whatIfHtml(w) {
+    const n = w.now, t = w.then, cut = S.plan.cutoff;
+    const row = (label, a, b, bad) => `<tr><td>${label}</td><td>${a}</td><td class="${bad == null ? "" : bad ? "is-bad" : "is-ok"}">${b}</td></tr>`;
+    const bn = (x) => `${PNAME[x.key]} · ${n0(x.rate)}/h`;
+    const dl = t.labor - n.labor;
+    const rows = [
+      t.sortDone ? "" : row("Fin del sort", clock(n.sortEnd), clock(t.sortEnd), t.sortEnd > cut),
+      t.sortDone ? "" : row("Marca el ritmo", bn(n.bottleneck), bn(t.bottleneck), null),
+      row("Rutas tarde", n.late, t.late, t.late > n.late ? true : t.late < n.late ? false : null),
+      row("Rollover", n0(n.rollover), n0(t.rollover), t.rollover > n.rollover + 4 ? true : t.rollover < n.rollover - 4 ? false : null),
+      row("Horas-persona que quedan", dec1(n.labor), `${dec1(t.labor)} <small>(${signed(dl, dec1)})</small>`, null),
+    ].join("");
+    // quién entraría y quién saldría, con su ritmo en ese proceso
+    const pers = (x, verb) => `${esc(x.name)} <small>${x.id}</small> ${verb} ${PNAME[x.to || x.from]}${x.to && x.from ? ` (desde ${PNAME[x.from]})` : ""} · ${Math.round(x.eff * 100)}%${x.temp ? " · ETT" : x.to && !x.trained ? " · sin formación" : ""}`;
+    const moves = [...w.joins.map((x) => pers(x, "→")), ...w.leaves.filter((x) => !w.joins.some((j) => j.id === x.id)).map((x) => pers(x, "sale de"))];
+    return `<table class="ds-whatif"><thead><tr><th></th><th>Ahora</th><th>Con el cambio</th></tr></thead><tbody>${rows}</tbody></table>
+      ${moves.length ? `<ul class="ds-whatif-who">${moves.slice(0, 6).map((x) => `<li>${x}</li>`).join("")}${moves.length > 6 ? `<li>y ${moves.length - 6} más</li>` : ""}</ul>` : ""}`;
+  }
+  // Resultado de la simulación exacta del resto del turno
+  function simHtml(withDraft) {
+    const key = withDraft ? simKey(draft) : "";
+    if (!sim || sim.key !== key) return `<button class="ds-btn ds-btn--ghost ds-sim-btn" data-plan="sim" title="Repite la partida hasta ahora y la sigue hasta el final del turno: tarda unos segundos">Simular el resto del turno</button>`;
+    if (sim.status === "run") return `<p class="ds-sim-note"><span class="ds-spin"></span>Simulando el resto del turno…</p>`;
+    if (sim.status === "error") return `<p class="ds-sim-note is-bad">No se ha podido simular: ${esc(sim.error)}</p>`;
+    const a = sim.base, b = sim.then, cut = S.plan.cutoff;
+    const se = (x) => (x.sortEnd == null ? "sin terminar" : clock(x.sortEnd));
+    const cell = (v, bad) => `<td class="${bad == null ? "" : bad ? "is-bad" : "is-ok"}">${v}</td>`;
+    const rows = [
+      ["Fin del sort", se(a), se(b), (x) => x.sortEnd == null || x.sortEnd > cut],
+      ["Rutas a tiempo", `${a.routesOut - a.routesLate}/${a.routesTotal}`, `${b.routesOut - b.routesLate}/${b.routesTotal}`, (x) => x.routesLate > 0 || x.routesOut < x.routesTotal],
+      ["Rollover", n0(a.rollover), n0(b.rollover), (x) => x.rollover > 0],
+      ["Fin del turno", a.endAt == null ? "—" : clock(a.endAt), b.endAt == null ? "—" : clock(b.endAt), null],
+      ["Horas-persona", dec1(a.laborHours), dec1(b.laborHours), null],
+      ["Paq / hora trabajada", a.pph == null ? "—" : n0(a.pph), b.pph == null ? "—" : n0(b.pph), null],
+    ].map(([l, x, y, bad]) => withDraft ? `<tr><td>${l}</td>${cell(x, bad && bad(a))}${cell(y, bad && bad(b))}</tr>` : `<tr><td>${l}</td>${cell(x, bad && bad(a))}</tr>`).join("");
+    return `<div class="ds-sim"><span class="ds-eyebrow">Simulación del turno completo · desde las ${clock(sim.at)}</span>
+      <table class="ds-whatif"><thead><tr><th></th><th>${withDraft ? "Sin cambiar" : "Si sigue así"}</th>${withDraft ? "<th>Con el cambio</th>" : ""}</tr></thead><tbody>${rows}</tbody></table>
+      <button class="ds-btn ds-btn--ghost ds-sim-btn" data-plan="sim">Volver a simular</button></div>`;
+  }
+
   function renderProcs(m) {
     const staff = draft || S.staff;
     const rows = m.processes.map((p) => {
+      const ctl = `<td class="ds-pp"><button data-pp="${p.key}" data-d="-1" aria-label="Quitar persona de ${p.name}">−</button><b class="${staff[p.key] !== S.staff[p.key] ? "is-changed" : ""}">${staff[p.key]}</b><button data-pp="${p.key}" data-d="1" aria-label="Añadir persona a ${p.name}">+</button></td>`;
+      if (p.marshal) return marshalRow(p, staff, ctl);
       const st = procStatus(p), q = QUEUE[p.key](), cap = (p.target * S.staff[p.key]) / 60;
-      return `<tr><td><i class="ds-sem is-${st}"></i>${p.name}</td>
-        <td class="ds-pp"><button data-pp="${p.key}" data-d="-1" aria-label="Quitar persona de ${p.name}">−</button><b class="${staff[p.key] !== S.staff[p.key] ? "is-changed" : ""}">${staff[p.key]}</b><button data-pp="${p.key}" data-d="1" aria-label="Añadir persona a ${p.name}">+</button></td>
-        <td>${st === "idle" ? "—" : Math.round(p.uph)}</td><td>${p.target}</td><td>${q ? fmtMin(q / cap) : "—"}</td></tr>`;
+      return `<tr><td><i class="ds-sem is-${st}"></i>${p.name}</td>${ctl}<td>${st === "idle" ? "—" : Math.round(p.uph)}</td><td>${p.target}</td><td>${q ? fmtMin(q / cap) : "—"}</td></tr>`;
     }).join("");
     const total = Object.values(staff).reduce((s, v) => s + v, 0), base = Object.values(S.staff).reduce((s, v) => s + v, 0);
     const waveTxt = (ws) => ws.map((w) => `<span>O${w.n} ${w.done ? (w.late ? `<b class="is-bad">${w.late} tarde</b>` : '<b class="is-ok">fuera</b>') : `<b class="${w.late ? "is-bad" : "is-ok"}">${clock(w.depart)}</b>`}</span>`).join("");
     let out;
     if (draft && !sameStaff(draft, S.staff)) {
-      const now = E.forecast(), then = E.forecast(draft), wNow = m.waves, wThen = E.waveForecast(draft);
-      const lateNow = wNow.reduce((s, w) => s + w.late, 0), lateThen = wThen.reduce((s, w) => s + w.late, 0);
-      out = `<div class="ds-plan-out">Con este reparto (${total} personas, ${total - base >= 0 ? "+" : ""}${total - base}): fin del sort
-        <b class="${then.sortEnd > S.plan.cutoff ? "is-bad" : "is-ok"}">${clock(then.sortEnd)}</b> (ahora ${clock(now.sortEnd)}) · rutas tarde previstas
-        <b class="${lateThen ? "is-bad" : "is-ok"}">${lateThen}</b> (ahora ${lateNow})
-        <div class="ds-waves">Salida prevista: ${waveTxt(wThen)}</div></div>
+      const w = E.whatIf(draft);
+      out = `<div class="ds-plan-out">Con este reparto: ${total} personas (${total - base >= 0 ? "+" : ""}${total - base}). Estimación al instante:
+        ${whatIfHtml(w)}
+        <div class="ds-waves">Salida prevista: ${waveTxt(w.then.waves)}</div></div>
+        ${simHtml(true)}
         <div class="ds-plan-actions"><button class="ds-btn ds-btn--out" data-plan="apply">Aplicar</button><button class="ds-btn ds-btn--ghost" data-plan="discard">Descartar</button></div>`;
     } else {
+      const bn = E.bottleneck();
       out = `<div class="ds-plan-out">${total} personas · prueba a mover gente con − y + para ver el efecto antes de aplicarlo.
-        <div class="ds-waves">Salida prevista: ${waveTxt(m.waves)}</div></div>`;
+        ${S.sortDoneAt == null ? `<div>Marca el ritmo del sort: <b>${PNAME[bn.key]}</b> (${n0(bn.rate)} paq/h).</div>` : ""}
+        <div class="ds-waves">Salida prevista: ${waveTxt(m.waves)}</div></div>${S.over ? "" : simHtml(false)}`;
     }
     const { adv, need } = adviceNow();
     const advHtml = adv && !draft ? `<div class="ds-advice is-${adv.kind}"><span class="ds-eyebrow">Recomendación</span><p>${esc(adv.text)}</p>
       <div class="ds-plan-actions"><button class="ds-btn ds-btn--out" data-plan="advice">Aplicar</button><button class="ds-btn ds-btn--ghost" data-plan="ignore">Ignorar</button></div></div>` : "";
-    // plantilla mínima para llegar al corte con 15 min de margen y sacar todas las oleadas
+    // plantilla mínima para llegar al corte con 15 min de margen, sacar todas las oleadas y cubrir los marshals
     const sortKeys = ["receive", "induct", "stow", "ps"], sortNow = sortKeys.reduce((t, k) => t + S.staff[k], 0);
     const needHtml = `<div class="ds-need"><span>Plantilla mínima ${need.sortDone ? "" : need.reachable ? "para el corte, con 15 min de margen" : "(el corte ya no se alcanza)"}</span>
-      ${need.sortDone ? "" : `<b>Sort ${need.sort}</b> <small>${crewTxt(need.staff, ["induct", "stow"])} · ahora ${sortNow}</small>`}
+      ${need.sortDone ? "" : `<b>Sort ${need.sort}</b> <small>${crewTxt(need.staff, sortKeys)} · ahora ${sortNow}</small>`}
       <b>Pick ${need.pick}</b> <small>ahora ${S.staff.pick}</small>
+      <b>Marshals ${need.marshals}</b> <small>dock y yard · ahora ${S.staff.dock + S.staff.yard}</small>
       <button class="ds-btn ds-btn--ghost" data-plan="need" title="Carga esta plantilla en el planificador para ver el efecto antes de aplicarla">Probar</button></div>`;
     $("#ds-procs").innerHTML = `${advHtml}<table><thead><tr><th>Proceso</th><th>Personas</th><th>UPH</th><th>Obj.</th><th>Cola</th></tr></thead><tbody>${rows}</tbody></table>${out}${needHtml}`;
   }
+
+  // ── Simulación exacta del resto del turno ─────────────
+  // Repite la partida hasta ahora (misma semilla y mismas acciones) y la sigue hasta el final con y sin el cambio.
+  // Va en un Web Worker para no frenar la animación; si el navegador no lo permite (p. ej. abriendo el archivo
+  // sin servidor), se hace aquí mismo.
+  let sim = null, simAcc = 0;
+  const simKey = (st) => (st ? MARSHALS.concat(["receive", "induct", "stow", "pick", "ps"]).map((k) => st[k]).join(",") : "");
+  function project(msg) {
+    const local = () => DSEngine.project(msg.L, msg.opts, msg.actions, msg.atStep, msg.staff);
+    return new Promise((resolve, reject) => {
+      let w = null;
+      try { w = new Worker("whatif-worker.js"); } catch (e) { w = null; }
+      const fallback = () => setTimeout(() => { try { resolve(local()); } catch (e) { reject(e); } }, 30);
+      if (!w) return fallback();
+      w.onmessage = (e) => { w.terminate(); resolve(e.data); };
+      w.onerror = (e) => { e.preventDefault(); w.terminate(); fallback(); };
+      w.postMessage(msg);
+    });
+  }
+  function runSim() {
+    const st = draft && !sameStaff(draft, S.staff) ? { ...draft } : null;
+    const job = { key: simKey(st), at: S.t, status: "run" };
+    sim = job;
+    const msg = (staff) => ({ L: E.spec.L, opts: E.spec.opts, actions: S.actions.slice(), atStep: S.steps, staff });
+    const runs = st ? [project(msg(null)), project(msg(st))] : [project(msg(null))];
+    Promise.all(runs).then(([base, then]) => { job.status = "done"; job.base = base; job.then = then || base; })
+      .catch((e) => { job.status = "error"; job.error = e && e.message ? e.message : String(e); })
+      .finally(() => { if (sim === job) renderProcs(E.metrics()); });
+  }
+
   function onProcs(e) {
     const b = e.target.closest("button"); if (!b) return;
     if (b.dataset.pp) {
+      const k = b.dataset.pp;
       draft = draft || { ...S.staff };
-      draft[b.dataset.pp] = Math.max(1, Math.min(60, draft[b.dataset.pp] + Number(b.dataset.d)));
+      draft[k] = Math.max(minStaff(k), Math.min(60, draft[k] + Number(b.dataset.d)));
     }
-    if (b.dataset.plan === "apply" && draft) {
-      const moves = Object.keys(draft).filter((k) => draft[k] !== S.staff[k]).map((k) => `${k} ${S.staff[k]}→${draft[k]}`);
-      Object.assign(S.staff, draft); draft = null;
-      E.log(`Cambio de plantilla: ${moves.join(", ")}`, "warn");
-    }
+    if (b.dataset.plan === "apply" && draft) { E.setStaff({ ...draft }); draft = null; }
     if (b.dataset.plan === "discard") draft = null;
     if (b.dataset.plan === "need") draft = { ...adviceNow().need.staff };
+    if (b.dataset.plan === "sim") runSim();
     const adv = advice.adv;
     if (b.dataset.plan === "advice" && adv) {
-      const moves = Object.keys(adv.staff).filter((k) => adv.staff[k] !== S.staff[k]).map((k) => `${PNAME[k]} ${S.staff[k]}→${adv.staff[k]}`);
-      Object.assign(S.staff, adv.staff); advice.k = null;
-      E.log(`Recomendación aplicada: ${moves.join(", ")}`, "out");
+      E.setStaff({ ...adv.staff }, "Recomendación aplicada"); advice.k = null;
       toast("Recomendación aplicada");
     }
     // ignorada: no vuelve a salir la misma en 30 min de turno
@@ -463,6 +635,7 @@
   }
 
   // ── Controles ─────────────────────────────────────────
+  // las acciones pasan por el motor para que queden apuntadas y la simulación del resto del turno las repita
   $("#ds-add-truck").addEventListener("click", () => { const err = E.addTruck(); if (err) toast(err); });
   $("#ds-add-van").addEventListener("click", () => { const err = E.callVan(null); if (err) toast(err); });
   const pauseBtn = $("#ds-pause");
@@ -474,7 +647,7 @@
   $("#ds-restart").addEventListener("click", () => boot());
   // el selector es un multiplicador sobre tiempo real; el motor avanza en minutos simulados
   $("#ds-speed").addEventListener("change", (e) => { S.speed = Number(e.target.value) / 60; });
-  $("#ds-auto").addEventListener("change", (e) => { S.auto = e.target.checked; });
+  $("#ds-auto").addEventListener("change", (e) => { E.setAuto(e.target.checked); });
   $("#ds-track-form").addEventListener("submit", (e) => { e.preventDefault(); track($("#ds-search").value.trim().toUpperCase()); });
   $("#ds-random").addEventListener("click", () => {
     const live = [...S.transit.map((t) => t.pkg), ...S.routes.flatMap((r) => r.bag)];
@@ -483,7 +656,7 @@
   });
   document.querySelectorAll("[data-zone]").forEach((b) => b.addEventListener("click", () => {
     const z = b.dataset.zone;
-    S.selected = z.startsWith("aisle") ? { kind: "aisle", id: z.slice(5) } : { kind: "zone", id: z };
+    S.selected = z.startsWith("aisle") ? { kind: "aisle", id: z.slice(5) } : z.startsWith("marshal:") ? { kind: "marshal", id: z.slice(8) } : { kind: "zone", id: z };
     renderDetail();
   }));
 
@@ -532,11 +705,13 @@
   function frame(now) {
     if (now - last < MIN_FRAME) { requestAnimationFrame(frame); return; }
     const dt = Math.min((now - last) / 1000, 0.1); last = now;
-    if (!S.paused) { let rem = dt * S.speed; while (rem > 0) { const d = Math.min(rem, 0.05); E.step(d); rem -= d; } }
+    // pasos fijos de DSEngine.DT: así la partida se puede repetir exacta para simular el resto del turno
+    if (!S.paused) { simAcc += dt * S.speed; while (simAcc >= DSEngine.DT) { E.step(DSEngine.DT); simAcc -= DSEngine.DT; } }
     if (mapVisible) V.draw(now / 1000);
     uiAcc += dt;
     if (uiAcc > (V.COARSE ? 0.5 : 0.25)) {
-      uiAcc = 0; renderKpis(); drawShift(); drawPlan(); drawHourly(); if (S.selected) renderDetail();
+      uiAcc = 0; renderKpis(); drawShift(); drawPlan(); drawHourly(); if (S.selected && ctab === "search") renderDetail();
+      if (ctab === "hv") renderHV();
       // al terminar el turno se abre el informe una vez
       if (S.over && !reportShown) { reportShown = true; openReport(); }
     }

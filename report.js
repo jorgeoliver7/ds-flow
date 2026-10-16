@@ -88,6 +88,19 @@
       if (low.length) bad.push(`${low.length} persona${low.length > 1 ? "s" : ""} por debajo del 90% de su equipo: ${low.map((e) => `${e.name} (${e.id})`).join(", ")}${low.filter((e) => e.tenure < 6).length * 2 > low.length ? ". La mayoría lleva menos de 6 meses" : ""}.`);
       if (qual.length) bad.push(`Missort por encima del 0,6% en ${qual.map((e) => `${e.name} (${e.id}, ${pct(e.missortRate, 2)})`).join(", ")}: conviene repasar el stow.`);
     }
+    // high value: que ninguno se quede en la estación ni se pierda
+    if (S.hv && S.hv.length) {
+      const routed = (p) => p.where === "route" || p.where === "delivered";
+      const left = S.hv.filter((p) => !routed(p) && p.where !== "writtenoff" && S.routes[p.route - 1].dispatched), lost = S.hv.filter((p) => p.where === "writtenoff");
+      if (left.length) bad.push(`${left.length} high value se ${left.length > 1 ? "quedan" : "queda"} en la estación (rollover): ${left.map((p) => p.id).join(", ")}.`);
+      if (lost.length) bad.push(`${lost.length} high value dado${lost.length > 1 ? "s" : ""} de baja por daños: ${lost.map((p) => p.id).join(", ")}.`);
+      if (!left.length && !lost.length && S.over) good.push(`Los ${S.hv.length} high value del turno salieron a reparto en su furgoneta.`);
+    }
+    // marshals: si faltó alguno mientras hacía falta
+    const nm = S.noMarshal || {}, gap = [["dock", "dock marshal", "los camiones tardaron más en atracar y descargaron más despacio"], ["yard", "yard marshal", "las furgonetas tardaron más en colocarse y en salir"]]
+      .filter(([k]) => (nm[k] || 0) >= 5);
+    for (const [k, name, why] of gap) bad.push(`Sin ${name} durante ${fmt(nm[k])}: ${why}.`);
+    if (!gap.length && (L.docks.marshal || L.yard.marshal)) good.push("Dock marshal y yard marshal cubiertos durante todo su horario.");
     for (const ev of S.plan.events) {
       if (ev.type === "conveyor" && ev.state !== "pending") bad.push(`El conveyor estuvo parado ${ev.minutes} min desde las ${clock(ev.at)}.`);
     }

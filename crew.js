@@ -5,7 +5,9 @@
 (function (root) {
   "use strict";
 
-  const PROCS = ["receive", "induct", "stow", "pick", "ps"];
+  const PROCS = ["receive", "induct", "stow", "pick", "ps", "dock", "yard"];
+  // los marshals no clasifican paquetes: no tienen objetivo de UPH ni entran en las medias de rendimiento
+  const MARSHALS = ["dock", "yard"];
   const NAMES = ["Lucía", "Javier", "Marta", "Antonio", "Carmen", "David", "Rocío", "Manuel", "Laura", "Francisco", "Elena", "Sergio",
     "Paula", "Alejandro", "Inés", "Pablo", "Nuria", "Daniel", "Cristina", "Raúl", "Sara", "Iván", "Alba", "Jesús", "Irene", "Adrián",
     "Noelia", "Rubén", "Patricia", "Álvaro", "Silvia", "Miguel", "Andrea", "Fernando", "Lorena", "Óscar", "Beatriz", "Hugo", "Celia",
@@ -22,12 +24,13 @@
 
   // Equipos del turno: el de noche hace el sort, el de mañana el pick. La tarde lo hace todo con un equipo pequeño.
   // base: personas por proceso que hay normalmente; extra: gente formada que se puede llamar (horas extra, otro turno)
+  // marshals: el dock marshal es del equipo de noche (recibe los camiones) y el yard marshal del de mañana (oleadas)
   function teams(L, evening) {
     const b = { receive: L.receive.staff, induct: L.induct.staff, stow: L.stow.staff, ps: L.problem.staff };
-    if (evening) return [{ team: "tarde", base: { receive: 1, induct: 1, stow: 3, pick: 3, ps: 1 }, extra: { stow: 1, pick: 1 } }];
+    if (evening) return [{ team: "tarde", base: { receive: 1, induct: 1, stow: 3, pick: 3, ps: 1 }, extra: { stow: 1, pick: 1 }, marshals: { dock: 1, yard: 1 }, marshalExtra: {} }];
     return [
-      { team: "noche", base: b, extra: { receive: 1, induct: 2, stow: 5, ps: 1 } },
-      { team: "mañana", base: { pick: L.pick.staff }, extra: { pick: 6 } },
+      { team: "noche", base: b, extra: { receive: 1, induct: 2, stow: 5, ps: 1 }, marshals: { dock: 1 }, marshalExtra: { dock: 1 } },
+      { team: "mañana", base: { pick: L.pick.staff }, extra: { pick: 6 }, marshals: { yard: 1 }, marshalExtra: { yard: 1 } },
     ];
   }
 
@@ -37,21 +40,37 @@
     const used = new Set(), out = [];
     const id = () => { let x; do x = "E-" + String(1000 + Math.floor(rand() * 9000)); while (used.has(x)); used.add(x); return x; };
     const names = NAMES.slice();
+    const SORTING = PROCS.filter((p) => !MARSHALS.includes(p));
     for (const t of teams(L, evening)) {
       for (const [group, counts] of [["base", t.base], ["extra", t.extra]]) {
-        for (const k of PROCS) for (let i = 0; i < (counts[k] || 0); i++) {
+        for (const k of SORTING) for (let i = 0; i < (counts[k] || 0); i++) {
           // antigüedad en meses: los nuevos van algo más lentos y fallan algo más
           const tenure = Math.max(1, Math.round(rand() ** 1.6 * 60));
           const speed = 0.86 + Math.min(tenure, 24) / 24 * 0.14 + (rand() - 0.5) * 0.16;
           const care = Math.max(0.4, Math.min(2.2, (1.35 - Math.min(tenure, 30) / 30 * 0.6) * (0.6 + rand() * 0.8)));
           // formación cruzada: uno o dos procesos más del mismo equipo
-          const others = PROCS.filter((p) => p !== k && (t.team === "noche" ? p !== "pick" : t.team === "mañana" ? p === "ps" || p === "stow" : true));
+          const others = SORTING.filter((p) => p !== k && (t.team === "noche" ? p !== "pick" : t.team === "mañana" ? p === "ps" || p === "stow" : true));
           const skills = [k];
           for (const p of others) if (rand() < 0.35) skills.push(p);
           const n = names.splice(Math.floor(rand() * names.length), 1)[0] || "Persona";
           out.push({ id: id(), name: `${n} ${String.fromCharCode(65 + Math.floor(rand() * 26))}.`, team: t.team, primary: k, skills, tenure, speed, care, bench: group === "extra" });
         }
       }
+    }
+    // Marshals, con su propia semilla para que el resto de la plantilla siga siendo la misma gente.
+    // Suelen ser veteranos; algunos compañeros del mismo equipo también están formados para cubrirlos.
+    const rm = rng(evening ? 4343 : 2125);
+    for (const t of teams(L, evening)) {
+      for (const [group, counts] of [["base", t.marshals], ["extra", t.marshalExtra]]) {
+        for (const k of MARSHALS) for (let i = 0; i < (counts[k] || 0); i++) {
+          const tenure = 18 + Math.round(rm() * 42);
+          const n = names.splice(Math.floor(rm() * names.length), 1)[0] || "Persona";
+          let x; do x = "E-" + String(1000 + Math.floor(rm() * 9000)); while (used.has(x)); used.add(x);
+          out.push({ id: x, name: `${n} ${String.fromCharCode(65 + Math.floor(rm() * 26))}.`, team: t.team, primary: k, skills: [k], tenure,
+            speed: 0.95 + rm() * 0.1, care: 0.6 + rm() * 0.4, bench: group === "extra" });
+        }
+      }
+      for (const k of MARSHALS) if (t.marshals[k]) for (const e of out) if (e.team === t.team && !MARSHALS.includes(e.primary) && e.tenure >= 12 && rm() < 0.2) e.skills.push(k);
     }
     // la plantilla base de cada proceso rinde de media al 100%: así el equipo habitual da el ritmo de layout.js
     for (const k of PROCS) {
@@ -73,7 +92,7 @@
     }));
     const byProc = {}; for (const k of PROCS) byProc[k] = [];
     let temps = 0;
-    const teamOf = (k) => (evening ? "tarde" : k === "pick" ? "mañana" : "noche");
+    const teamOf = (k) => (evening ? "tarde" : k === "pick" || k === "yard" ? "mañana" : "noche");
     const eff = (e, k) => e.speed * (e.primary === k ? 1 : e.skills.includes(k) ? SECONDARY : UNTRAINED);
 
     function assign(e, k, why) {
@@ -104,22 +123,23 @@
     // Registro de cambios de proceso del turno, para la actividad y la pestaña de plantilla
     const moves = [];
     // Ajusta quién trabaja en cada proceso a lo que dice S.staff. Devuelve los cambios hechos.
-    function sync(why) {
+    function sync(why, target) {
+      target = target || S.staff;
       const released = [], touched = new Set();
       for (const k of PROCS) {
         // sale primero quien sabe hacer un proceso al que le falta gente (es un cambio de puesto),
         // luego quien no es de ese proceso y, entre iguales, quien entró el último
-        const need = PROCS.filter((x) => byProc[x].length < S.staff[x]);
+        const need = PROCS.filter((x) => byProc[x].length < (target[x] || 0));
         const useful = (e) => need.some((x) => e.skills.includes(x));
-        while (byProc[k].length > S.staff[k]) {
+        while (byProc[k].length > (target[k] || 0)) {
           const e = byProc[k].slice().sort((a, b) => useful(b) - useful(a) || (a.primary === k) - (b.primary === k) || b.since - a.since)[0];
           assign(e, null, why); released.push(e); touched.add(e);
         }
       }
       for (const k of PROCS) {
-        while (byProc[k].length < S.staff[k]) { const e = candidate(k, released); assign(e, k, why); touched.add(e); }
+        while (byProc[k].length < (target[k] || 0)) { const e = candidate(k, released); assign(e, k, why); touched.add(e); }
       }
-      if (why === "start") return [];
+      if (why === "start" || why === "preview") return [...touched];
       const changes = [...touched].map((e) => ({ t: S.t, id: e.id, name: e.name, ...e.moves[e.moves.length - 1] }));
       moves.push(...changes);
       return changes;
@@ -135,6 +155,29 @@
       return c;
     }
     sync("start");
+
+    // Qué pasaría con otro reparto, sin cambiar nada: quién entraría y saldría de cada proceso
+    // y a qué ritmo iría cada equipo. Se aplica el mismo criterio que al cambiar la plantilla de verdad
+    // y luego se deshace todo.
+    function preview(target) {
+      const saved = people.map((e) => [e, e.proc, e.since, e.moves.length]), was = new Map(saved.map((x) => [x[0], x[1]]));
+      const n = people.length, t0 = temps, m0 = moves.length;
+      const before = {}; for (const k of PROCS) before[k] = byProc[k].slice();
+      try {
+        sync("preview", target);
+        const factors = {}; for (const k of PROCS) factors[k] = factor(k);
+        const joins = [], leaves = [];
+        for (const k of PROCS) {
+          for (const e of byProc[k]) if (!before[k].includes(e)) joins.push({ id: e.id, name: e.name, to: k, from: was.get(e) || null, eff: eff(e, k), temp: !!e.temp, trained: e.skills.includes(k) });
+          for (const e of before[k]) if (!byProc[k].includes(e)) leaves.push({ id: e.id, name: e.name, from: k, eff: eff(e, k) });
+        }
+        return { factors, joins, leaves };
+      } finally {
+        for (const [e, proc, since, ml] of saved) { e.proc = proc; e.since = since; e.moves.length = ml; }
+        people.length = n; temps = t0; moves.length = m0;
+        for (const k of PROCS) { byProc[k].length = 0; byProc[k].push(...before[k]); }
+      }
+    }
 
     // Ritmo medio del equipo de un proceso (1 = el equipo habitual)
     function factor(k) {
@@ -179,13 +222,14 @@
       return people.map((e) => {
         const procs = PROCS.filter((k) => e.minutes[k] > 0 || e.units[k] > 0).map((k) => {
           const h = (e.minutes[k] || 0) / 60, u = e.units[k] || 0, uph = h > 0.25 ? u / h : null;
-          return { key: k, hours: h, units: u, uph, target: targets[k], ratio: uph != null && k !== "ps" ? uph / targets[k] : null,
+          const counts = k !== "ps" && !MARSHALS.includes(k);
+          return { key: k, hours: h, units: u, uph, target: targets[k], ratio: uph != null && counts ? uph / targets[k] : null,
             vsTeam: uph != null && team[k] ? uph / team[k] : null };
         });
         const hours = procs.reduce((s, p) => s + p.hours, 0), units = procs.reduce((s, p) => s + p.units, 0);
         // medias ponderadas por las horas en cada proceso (problem solve no tiene objetivo por unidades)
         const wavg = (f) => {
-          const r = procs.filter((p) => p[f] != null && p.key !== "ps"), h = r.reduce((s, p) => s + p.hours, 0);
+          const r = procs.filter((p) => p[f] != null && p.key !== "ps" && !MARSHALS.includes(p.key)), h = r.reduce((s, p) => s + p.hours, 0);
           return h > 0.25 ? r.reduce((s, p) => s + p[f] * p.hours, 0) / h : null;
         };
         const ratio = wavg("ratio"), vsTeam = wavg("vsTeam");
@@ -200,10 +244,10 @@
       });
     }
 
-    return { people, byProc, sync, move, factor, work, missort, tick, stats, moves, eff, teamOf };
+    return { people, byProc, sync, move, factor, work, missort, tick, stats, moves, eff, teamOf, preview };
   }
 
-  const api = { create, roster, PROCS };
+  const api = { create, roster, PROCS, MARSHALS };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.DSCrew = api;
 })(typeof window !== "undefined" ? window : globalThis);
