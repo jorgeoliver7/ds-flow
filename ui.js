@@ -471,12 +471,14 @@
   // Va en un Web Worker para no frenar la animación; si el navegador no lo permite (p. ej. abriendo el archivo
   // sin servidor), se hace aquí mismo.
   let sim = null, simAcc = 0;
+  // misma versión que los scripts de la página (?v=...), para que el worker no use código antiguo de la caché
+  const VERSION = (document.querySelector('script[src^="ui.js"]')?.getAttribute("src").match(/\?.*/) || [""])[0];
   const simKey = (st) => (st ? MARSHALS.concat(["receive", "induct", "stow", "pick", "ps"]).map((k) => st[k]).join(",") : "");
   function project(msg) {
     const local = () => DSEngine.project(msg.L, msg.opts, msg.actions, msg.atStep, msg.staff);
     return new Promise((resolve, reject) => {
       let w = null;
-      try { w = new Worker("whatif-worker.js"); } catch (e) { w = null; }
+      try { w = new Worker("whatif-worker.js" + VERSION); } catch (e) { w = null; }
       const fallback = () => setTimeout(() => { try { resolve(local()); } catch (e) { reject(e); } }, 30);
       if (!w) return fallback();
       w.onmessage = (e) => { w.terminate(); resolve(e.data); };
@@ -707,7 +709,7 @@
     const dt = Math.min((now - last) / 1000, 0.1); last = now;
     // pasos fijos de DSEngine.DT: así la partida se puede repetir exacta para simular el resto del turno
     if (!S.paused) { simAcc += dt * S.speed; while (simAcc >= DSEngine.DT) { E.step(DSEngine.DT); simAcc -= DSEngine.DT; } }
-    if (mapVisible) V.draw(now / 1000);
+    if (mapVisible) V.draw(now / 1000, S.paused ? 0 : simAcc);
     uiAcc += dt;
     if (uiAcc > (V.COARSE ? 0.5 : 0.25)) {
       uiAcc = 0; renderKpis(); drawShift(); drawPlan(); drawHourly(); if (S.selected && ctab === "search") renderDetail();
