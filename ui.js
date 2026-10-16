@@ -471,12 +471,14 @@
   // Va en un Web Worker para no frenar la animación; si el navegador no lo permite (p. ej. abriendo el archivo
   // sin servidor), se hace aquí mismo.
   let sim = null, simAcc = 0;
+  // misma versión que los scripts de la página (?v=...), para que el worker no use código antiguo de la caché
+  const VERSION = (document.querySelector('script[src^="ui.js"]')?.getAttribute("src").match(/\?.*/) || [""])[0];
   const simKey = (st) => (st ? MARSHALS.concat(["receive", "induct", "stow", "pick", "ps"]).map((k) => st[k]).join(",") : "");
   function project(msg) {
     const local = () => DSEngine.project(msg.L, msg.opts, msg.actions, msg.atStep, msg.staff);
     return new Promise((resolve, reject) => {
       let w = null;
-      try { w = new Worker("whatif-worker.js"); } catch (e) { w = null; }
+      try { w = new Worker("whatif-worker.js" + VERSION); } catch (e) { w = null; }
       const fallback = () => setTimeout(() => { try { resolve(local()); } catch (e) { reject(e); } }, 30);
       if (!w) return fallback();
       w.onmessage = (e) => { w.terminate(); resolve(e.data); };

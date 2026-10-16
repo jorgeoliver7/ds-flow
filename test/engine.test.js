@@ -312,3 +312,12 @@ test("high value: se marcan unos pocos paquetes, sin cambiar la partida, y todos
   assert.equal(E.S.dispatched, none.S.dispatched);
   assert.ok(hv.every((p) => ["route", "delivered", "writtenoff"].includes(p.where)), "al final del turno no queda ninguno en la estación");
 });
+
+test("todos los archivos de la página llevan la misma versión, para que el navegador no mezcle código nuevo y antiguo", () => {
+  const html = require("node:fs").readFileSync(require("node:path").join(__dirname, "..", "index.html"), "utf8");
+  const local = [...html.matchAll(/(?:src|href)="([a-z-]+\.(?:js|css))(\?v=[^"]*)?"/g)];
+  assert.ok(local.length >= 10);
+  const versions = new Set(local.map((m) => m[2]));
+  assert.equal(versions.size, 1, `versiones: ${[...versions].join(", ")}`);
+  assert.ok([...versions][0], "con ?v=");
+});
