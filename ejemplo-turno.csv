@@ -3,19 +3,19 @@
 # corte (hora límite del sort) y oleada (hora de salida de la oleada 1-6, o de la primera de un pasillo A, B o C).
 # El archivo solo se lee en tu navegador: no se sube a ningún sitio.
 tipo;id;hora;paquetes
-camion;T-01;23:00;1850
-camion;T-02;23:15;1700
-camion;T-03;23:30;2100
-camion;T-04;23:50;2050
-camion;T-05;00:15;2050
-camion;T-06;00:40;1900
-camion;T-07;01:05;1850
-camion;T-08;01:30;1800
+camion;T-01;01:00;1850
+camion;T-02;01:10;1700
+camion;T-03;01:25;2100
+camion;T-04;01:40;2050
+camion;T-05;04:30;2050
+camion;T-06;02:10;1900
+camion;T-07;02:25;1850
+camion;T-08;03:45;1800
 camion;T-09;01:55;2350
-camion;T-10;02:20;1750
+camion;T-10;03:25;1750
 camion;T-11;02:45;1700
 camion;T-12;03:05;1800
-corte;;05:30;
+corte;;06:00;
 oleada;1;06:20;
 oleada;2;06:35;
 oleada;3;06:50;

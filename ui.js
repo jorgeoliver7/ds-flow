@@ -69,7 +69,7 @@
   const reportEl = $("#ds-report");
   let reportShown = false, report = null;
   function openReport() {
-    report = DSReport.build(E, scenario());
+    report = DSReport.build(E, scenario(), { hourly: hourly() });
     $("#ds-report-body").innerHTML = DSReport.html(report);
     if (!reportEl.open) reportEl.showModal();
   }
@@ -83,6 +83,61 @@
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   });
   $("#ds-report-print").addEventListener("click", () => window.print());
+  $("#ds-report-compare").addEventListener("click", () => { reportEl.close(); openCompare(); });
+
+  // ── Comparar escenarios ───────────────────────────────
+  // Dos turnos enteros (escenario + plantilla en cada lado), jugados en segundo plano, con su coste
+  const cmpEl = $("#ds-compare");
+  const COST_KEY = "ds-cost-hour";
+  function hourly() {
+    let v = NaN; try { v = Number(localStorage.getItem(COST_KEY)); } catch (e) {}
+    return v > 0 ? v : (L.cost ? L.cost.hourly : 18);
+  }
+  const cmpCache = {};
+  let cmpJob = 0;
+  const cmpScenarios = () => SCN.concat(custom ? [custom] : []);
+  const cmpOptions = (id) => (id === "importado" && custom ? { seed: custom.seed, shift: custom.shift, routeWeights: custom.weights, staff: {} } : DSScenarios.options(L, id));
+  function openCompare() {
+    const opts = cmpScenarios().map((s) => `<option value="${s.id}">${esc(s.name)}</option>`).join("");
+    const modes = DSCompare.STAFF_MODES.map((m) => `<option value="${m.id}">${m.name}</option>`).join("");
+    for (const side of ["a", "b"]) {
+      $(`#ds-cmp-${side}-sc`).innerHTML = opts; $(`#ds-cmp-${side}-st`).innerHTML = modes;
+      $(`#ds-cmp-${side}-sc`).value = scenarioId;
+    }
+    // por defecto: el turno de ahora con su plantilla frente a la plantilla mínima para el corte
+    $("#ds-cmp-a-st").value = "scenario"; $("#ds-cmp-b-st").value = "min";
+    $("#ds-cmp-cost").value = hourly();
+    if (!cmpEl.open) cmpEl.showModal();
+    runCompare();
+  }
+  function runCompare() {
+    const side = (k) => ({ sc: $(`#ds-cmp-${k}-sc`).value, mode: $(`#ds-cmp-${k}-st`).value });
+    const a = side("a"), b = side("b"), job = ++cmpJob, out = $("#ds-cmp-out");
+    const name = (x) => `${cmpScenarios().find((s) => s.id === x.sc).name}, ${x.mode === "min" ? "plantilla mínima" : "su plantilla"}`;
+    const get = (x) => {
+      const key = x.sc + ":" + x.mode + (x.sc === "importado" ? ":" + custom.desc : "");
+      if (!cmpCache[key]) {
+        const opts = cmpOptions(x.sc);
+        cmpCache[key] = inWorker({ type: "full", L, opts, mode: x.mode }, () => DSCompare.run(L, opts, x.mode));
+        cmpCache[key].catch(() => delete cmpCache[key]);
+      }
+      return cmpCache[key];
+    };
+    out.innerHTML = `<p class="ds-sim-note"><span class="ds-spin"></span>Jugando los dos turnos enteros…</p>`;
+    Promise.all([get(a), get(b)]).then(([ra, rb]) => {
+      if (job !== cmpJob) return;
+      out.innerHTML = DSCompare.html(ra, rb, hourly(), [name(a), name(b)]);
+    }).catch((e) => { if (job === cmpJob) out.innerHTML = `<p class="ds-sim-note is-bad">No se ha podido comparar: ${esc(e.message || e)}</p>`; });
+  }
+  $("#ds-compare-btn").addEventListener("click", openCompare);
+  $("#ds-compare-close").addEventListener("click", () => cmpEl.close());
+  for (const id of ["#ds-cmp-a-sc", "#ds-cmp-a-st", "#ds-cmp-b-sc", "#ds-cmp-b-st"]) $(id).addEventListener("change", runCompare);
+  $("#ds-cmp-cost").addEventListener("change", (e) => {
+    const v = Number(String(e.target.value).replace(",", "."));
+    if (!(v > 0)) { e.target.value = hourly(); return; }
+    try { localStorage.setItem(COST_KEY, String(v)); } catch (err) {}
+    runCompare();
+  });
   // se imprime siempre en claro, aunque la página esté en oscuro
   let themeBeforePrint = null;
   window.addEventListener("beforeprint", () => { themeBeforePrint = document.documentElement.dataset.theme; document.documentElement.dataset.theme = "light"; });
@@ -235,6 +290,8 @@
       if (st === "bad" && p.key !== "ps" && !p.marshal) al.push(["warn", `${p.name} rinde al ${Math.round((p.uph / p.target) * 100)}% del objetivo (${Math.round(p.uph)} de ${p.target} UPH)`]);
     }
     if (S.conveyorDown) al.unshift(["bad", "Conveyor parado: no se induce nada hasta que vuelva a funcionar"]);
+    const br = S.plan.breaks.find((b) => S.t >= b.from && S.t < b.to);
+    if (br && S.sortDoneAt == null) al.unshift(["warn", `Descanso del equipo de noche hasta las ${clock(br.to)}: el sort está parado`]);
     if (m.quality.psOpen > 25) al.push([m.quality.psOpen > 60 ? "bad" : "warn", `${m.quality.psOpen} paquetes esperando en problem solve`]);
     if (m.quality.missortRate > 0.005 && S.sorted > 2000) al.push(["warn", `Missorts al ${(m.quality.missortRate * 100).toFixed(2).replace(".", ",")}%, por encima del 0,5% objetivo`]);
     const lateW = m.waves.filter((w) => !w.done && w.late);
@@ -310,7 +367,7 @@
       const rows = dock
         ? [["Ahora", now], ["Quién", who || "—"], ["En la puerta", `${S.gate.length} camión${S.gate.length === 1 ? "" : "es"}`],
           ["Check-in por camión", n ? `${M.checkInMin} min` : `unos ${M.selfCheckInMin} min sin dock marshal`], ["Camiones recibidos", S.totals.dock || 0],
-          ["Horario", `desde las ${clock(S.plan.firstTruck - 15)} hasta el último camión`]]
+          ["Horario", `desde las ${clock(S.plan.sortStart)} hasta el último camión`]]
         : [["Ahora", now], ["Quién", who || "—"], ["Aparcando", S.vans.filter((v) => v.state === "arriving").length + " furgonetas"],
           ["Aparcar", n ? "1 min" : `unos ${M.parkNoMarshal} min sin yard marshal`], ["Furgonetas despachadas", S.totals.yard || 0],
           ["Horario", `desde las ${clock(S.plan.firstWave - M.before)}, durante las oleadas`]];
@@ -383,7 +440,7 @@
   function marshalRow(p, staff, ctl) {
     const st = procStatus(p), M = p.key === "dock" ? D.marshal : Y.marshal;
     const when = p.needed ? (p.staff ? "en su puesto" : '<b class="is-bad">sin cubrir</b>')
-      : p.key === "dock" ? (S.dockDoneAt != null ? "terminado" : `desde ${clock(S.plan.firstTruck - 15)}`)
+      : p.key === "dock" ? (S.dockDoneAt != null ? "terminado" : `desde ${clock(S.plan.sortStart)}`)
       : S.over ? "terminado" : `desde ${clock(S.plan.firstWave - M.before)}`;
     const q = p.queue ? (p.key === "dock" ? `${p.queue} en puerta` : `${p.queue} aparcando`) : "—";
     return `<tr class="is-marshal"><td><i class="ds-sem is-${st}"></i>${p.name}</td>${ctl}<td colspan="2" class="ds-when">${when}</td><td>${q}</td></tr>`;
@@ -475,7 +532,9 @@
   const VERSION = (document.querySelector('script[src^="ui.js"]')?.getAttribute("src").match(/\?.*/) || [""])[0];
   const simKey = (st) => (st ? MARSHALS.concat(["receive", "induct", "stow", "pick", "ps"]).map((k) => st[k]).join(",") : "");
   function project(msg) {
-    const local = () => DSEngine.project(msg.L, msg.opts, msg.actions, msg.atStep, msg.staff);
+    return inWorker(msg, () => DSEngine.project(msg.L, msg.opts, msg.actions, msg.atStep, msg.staff));
+  }
+  function inWorker(msg, local) {
     return new Promise((resolve, reject) => {
       let w = null;
       try { w = new Worker("whatif-worker.js" + VERSION); } catch (e) { w = null; }
@@ -582,8 +641,15 @@
     // barra de fondo y transcurrido
     ctx.fillStyle = C.zone; ctx.fillRect(X(x0), by, X(x1) - X(x0), 6);
     ctx.fillStyle = C.line; ctx.fillRect(X(x0), by, X(Math.min(S.t, x1)) - X(x0), 6);
-    // ventana de sort: del primer camión al corte
-    ctx.fillStyle = C.raw; ctx.globalAlpha = 0.35; ctx.fillRect(X(S.plan.firstTruck), by, X(S.plan.cutoff) - X(S.plan.firstTruck), 6); ctx.globalAlpha = 1;
+    // ventana de sort: desde que entra el equipo de noche (o llega el primer camión) hasta el corte
+    const s0 = Math.max(S.plan.firstTruck, S.plan.sortStart);
+    ctx.fillStyle = C.raw; ctx.globalAlpha = 0.35; ctx.fillRect(X(s0), by, X(S.plan.cutoff) - X(s0), 6); ctx.globalAlpha = 1;
+    // descansos del equipo de noche: el sort se para
+    for (const b of S.plan.breaks) {
+      ctx.fillStyle = C.floor; ctx.fillRect(X(b.from), by - 1, X(b.to) - X(b.from), 8);
+      ctx.strokeStyle = C.muted; ctx.lineWidth = 1; ctx.setLineDash([2, 2]); ctx.strokeRect(X(b.from) + 0.5, by - 0.5, X(b.to) - X(b.from) - 1, 7); ctx.setLineDash([]);
+      ctx.fillStyle = C.muted; ctx.textBaseline = "bottom"; ctx.fillText("descanso", X((b.from + b.to) / 2), by - 4); ctx.textBaseline = "top";
+    }
     // oleadas: pick (claro) y ventana de salida (sólido)
     const SH = E.SH;
     for (const wv of S.plan.waves) {
@@ -619,13 +685,19 @@
   }
 
   // ── Plan frente a real ────────────────────────────────
+  function planPts() {
+    const s0 = Math.max(S.plan.firstTruck, S.plan.sortStart), ts = [s0, S.plan.cutoff];
+    for (const b of S.plan.breaks) if (b.from > s0 && b.from < S.plan.cutoff) ts.push(b.from, Math.min(b.to, S.plan.cutoff));
+    return ts.sort((a, b) => a - b).map((t) => [t, E.planAt(t)]);
+  }
   function drawPlan() {
     const H = S.history, x0 = Math.min(S.plan.firstTruck, 0) - 5;
     const f = E.forecast(), x1 = Math.max(S.plan.cutoff, f.sortEnd) + 20;
     const total = S.plan.volume + Math.max(0, S.received - S.plan.volume);
     const real = H.filter((p) => p.t <= x1).map((p) => [p.t, p.sorted]);
     const series = [
-      { pts: [[S.plan.firstTruck, 0], [S.plan.cutoff, S.plan.volume]], color: C.muted, dash: [5, 4], width: 1.5 },
+      // el plan va en línea recta en minutos de trabajo y se queda plano en el descanso
+      { pts: planPts(), color: C.muted, dash: [5, 4], width: 1.5 },
       { pts: real, color: C.aisle[0], width: 2 },
     ];
     if (!f.done && S.t > S.plan.firstTruck) series.push({ pts: [[S.t, S.sorted], [f.sortEnd, total]], color: f.sortEnd > S.plan.cutoff ? C.bad : C.ok, dash: [2, 3], width: 1.5 });
@@ -674,12 +746,53 @@
     if (!on && document.fullscreenElement) document.exitFullscreen().catch(() => {});
     requestAnimationFrame(() => V.resize());
   }
-  presentBtn.addEventListener("click", () => setPresent(!root.classList.contains("is-present")));
+  // el botón abre el tour guiado; en pantalla completa sirve para salir
+  presentBtn.addEventListener("click", () => {
+    if (root.classList.contains("is-present")) { setPresent(false); return; }
+    if (tour.active) tour.stop(); else { if (reportEl.open) reportEl.close(); tour.start(); }
+  });
+
+  // ── Tour guiado ───────────────────────────────────────
+  // Adelanta el turno hasta t (minutos) en trozos, sin bloquear la página, y vuelve a pintar el panel
+  function fastForward(t, done) {
+    t = Math.min(t, S.plan.end + 240);
+    const tick = () => {
+      const t0 = performance.now();
+      while (S.t < t && !S.over && performance.now() - t0 < 40) E.step(DSEngine.DT);
+      if (S.t < t && !S.over) { requestAnimationFrame(tick); return; }
+      simAcc = 0; renderKpis(); renderLog(); drawShift(); drawPlan(); drawHourly();
+      if (done) done();
+    };
+    tick();
+  }
+  const tour = DSTour.create({
+    E: () => E, S: () => S, clock, at: (hhmm) => E.at(hhmm),
+    breakTxt: (short) => {
+      const b = S.plan.breaks;
+      if (!b.length) return short ? "—" : " (este escenario no tiene descanso)";
+      return short ? `${clock(b[0].from)} a ${clock(b[0].to)}` : ` de ${b.map((x) => `${clock(x.from)} a ${clock(x.to)}`).join(" y de ")}`;
+    },
+    view: (v) => { const b = document.querySelector(`.ds-tabs [data-view="${v}"]`); if (b && b.getAttribute("aria-selected") !== "true") b.click(); },
+    setScenario: (id) => {
+      if (scenarioId !== id) { scSel.value = id; scSel.dispatchEvent(new Event("change")); }
+      else if (S.t > 1) boot();
+    },
+    setCtab: (t) => { if (ctab !== t) setCtab(t); },
+    speed: () => Math.round(S.speed * 60),
+    setSpeed: (x) => { S.speed = x / 60; const sel = $("#ds-speed"); if ([...sel.options].some((o) => Number(o.value) === x)) sel.value = String(x); },
+    setPaused: (on) => { if (!!S.paused !== on) pauseBtn.click(); },
+    fastForward,
+    applyAdvice: () => { const b = document.querySelector('[data-plan="advice"]'); if (b) b.click(); return !!b; },
+    trackRandom: () => $("#ds-random").click(),
+    present: (on) => setPresent(on),
+    // al terminar: el turno hasta el final y su informe
+    finish: () => fastForward(Infinity, () => { reportShown = true; openReport(); }),
+  });
   // salir de pantalla completa con Esc también sale del modo presentación
   document.addEventListener("fullscreenchange", () => { if (!document.fullscreenElement && root.classList.contains("is-present")) setPresent(false); });
   // atajos: P presentar, espacio pausa (salvo escribiendo en un campo)
   document.addEventListener("keydown", (e) => {
-    if (e.target.closest("input, select, textarea") || e.metaKey || e.ctrlKey || e.altKey || reportEl.open) return;
+    if (e.target.closest("input, select, textarea") || e.metaKey || e.ctrlKey || e.altKey || reportEl.open || tour.active) return;
     if (e.key === "p" || e.key === "P") setPresent(!root.classList.contains("is-present"));
     else if (e.key === " " && !e.target.closest("button, a")) { e.preventDefault(); pauseBtn.click(); }
   });

@@ -6,7 +6,7 @@
 const DS_LAYOUT = {
   width: 1240,
   height: 740,
-  shiftStart: 23 * 60,     // el ciclo arranca a las 23:00
+  shiftStart: 45,          // el reloj de la partida arranca a las 00:45, un cuarto de hora antes de que entre la noche
 
   docks: {
     count: 9,
@@ -31,9 +31,9 @@ const DS_LAYOUT = {
   receive: {
     name: "Zona de carros", code: "CRT",
     x: 170, y: 124, w: 610, h: 112,
-    staff: 3,              // personas moviendo carros a inducción
-    uph: 1400,             // objetivo: paquetes por hora y persona
-    rate: 6000,            // lo que pueden llevar a inducción entre todos (carros llenos y medio llenos), calibrado con la simulación
+    staff: 4,              // personas moviendo carros a inducción
+    uph: 1600,             // objetivo: paquetes por hora y persona
+    rate: 8000,            // lo que pueden llevar a inducción entre todos (carros llenos y medio llenos), calibrado con la simulación
     moveMinutes: 1,      // lo que tarda un carro en llegar a inducción
     staleMinutes: 4,       // un carro a medio llenar se lleva tras este tiempo sin cambios
     desc: "Lo que sale del camión se coloca en carros, separados por grupo y por tamaño. Cuando inducción tiene hueco, alguien lleva el siguiente carro hasta allí.",
@@ -51,8 +51,8 @@ const DS_LAYOUT = {
   induct: {
     name: "Inducción", code: "IND",
     x: 40, y: 124, w: 110, h: 112,
-    rate: 5500, staff: 5,
-    uph: 1100,
+    rate: 7500, staff: 5,
+    uph: 1500,
     desc: "Cada paquete se pone en el conveyor. Al escanearlo, el sistema le asigna su ruta y el pasillo al que tiene que ir.",
   },
 
@@ -60,8 +60,8 @@ const DS_LAYOUT = {
 
   stow: {
     name: "Stow a sacas", code: "STW",
-    rate: 4800, staff: 16,  // los stowers van a los pasillos que tienen paquetes
-    uph: 300,
+    rate: 7220, staff: 19,  // los stowers van a los pasillos que tienen paquetes
+    uph: 380,
     desc: "Los stowers cogen el paquete del conveyor y lo meten en la saca de su ruta. Cada pasillo tiene 8 estanterías con 5 rutas cada una.",
     aisles: [
       // de arriba abajo: C, B, A
@@ -123,21 +123,25 @@ const DS_LAYOUT = {
   // Plan del turno. Son valores de ejemplo, no datos reales de ninguna estación:
   // ajústalos (o importa un CSV desde la app) para simular una noche concreta.
   shift: {
-    // unos 26.000 paquetes en 12 camiones para un equipo de noche de 26 personas
-    // (3 en carros, 5 en inducción, 16 en stow y 2 en problem solve)
+    // equipo de noche: entra a la 01:00, sale a las 09:30 y descansa de 04:00 a 04:30 (el sort se para)
+    sortStart: "01:00",
+    nightEnd: "09:30",
+    breaks: [{ at: "04:00", minutes: 30 }],
+    // unos 26.000 paquetes en 12 camiones para un equipo de noche de 30 personas
+    // (4 en carros, 5 en inducción, 19 en stow y 2 en problem solve) más el dock marshal
     trucks: [
-      { at: "23:00", units: 2300 }, { at: "23:10", units: 2100 }, { at: "23:30", units: 2400 },
-      { at: "23:50", units: 2200 }, { at: "00:10", units: 2300 }, { at: "00:35", units: 2100 },
-      { at: "01:00", units: 2400 }, { at: "01:25", units: 2200 }, { at: "01:50", units: 2100 },
-      { at: "02:15", units: 2300 }, { at: "02:40", units: 2000 }, { at: "03:00", units: 1800 },
+      { at: "01:00", units: 2300 }, { at: "01:05", units: 2100 }, { at: "01:20", units: 2400 },
+      { at: "01:35", units: 2200 }, { at: "01:50", units: 2300 }, { at: "02:05", units: 2100 },
+      { at: "02:20", units: 2400 }, { at: "02:40", units: 2200 }, { at: "03:00", units: 2100 },
+      { at: "03:20", units: 2300 }, { at: "03:40", units: 2000 }, { at: "04:30", units: 1800 },
     ],
-    sortCutoff: "05:30",   // hora límite para tener todo clasificado en sacas
+    sortCutoff: "06:00",   // hora límite para tener todo clasificado en sacas
     pickLead: 75,          // minutos antes de su oleada en que empieza el pick de una ruta
     loadWindow: 20,        // minutos desde la hora de la oleada para cargar y salir a tiempo
     maxWait: 20,           // pasado el límite, la furgoneta espera como mucho esto y sale con lo que tenga
     // incidencias programadas (para que la demo salga siempre igual)
     events: [
-      { type: "conveyor", at: "01:20", minutes: 8 },
+      { type: "conveyor", at: "02:20", minutes: 8 },
     ],
     // oleadas de 20 rutas cada 15 min: routes es el tramo de rutas del pasillo (1–40)
     waves: [
@@ -149,6 +153,10 @@ const DS_LAYOUT = {
       { at: "07:45", aisles: ["C"], routes: [21, 40] },
     ],
   },
+
+  // Coste de una hora de trabajo por persona, en euros, para el coste del turno y por paquete.
+  // Es un valor de ejemplo: se cambia desde la app (comparar escenarios).
+  cost: { hourly: 18 },
 
   // High value: paquetes de valor alto (electrónica, joyería...) que se siguen uno a uno durante el turno.
   // Proporción y valores inventados.

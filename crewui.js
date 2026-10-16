@@ -33,20 +33,20 @@
 
   // Dónde está cada persona ahora mismo, en palabras
   function status(e, S) {
-    const sortOn = S.t >= S.plan.firstTruck - 15 && S.sortDoneAt == null, pickOn = S.t >= S.plan.pickStart && !S.over;
+    const sortOn = S.t >= S.plan.sortStart && S.sortDoneAt == null, pickOn = S.t >= S.plan.pickStart && !S.over;
     if (!e.proc) return { txt: e.bench ? "Disponible" : "Libre", cls: "idle" };
     const clock = E().clock;
     if (MARSHAL[e.proc]) {
       if (E().marshalsOn()[e.proc]) return { txt: PROC[e.proc], cls: "on" };
       if (e.proc === "yard" && !S.over) return { txt: `Yard marshal desde ${clock(S.plan.firstWave - (L.yard.marshal ? L.yard.marshal.before : 15))}`, cls: "later" };
-      if (e.proc === "dock" && S.dockDoneAt == null) return { txt: `Dock marshal desde ${clock(S.plan.firstTruck - 15)}`, cls: "later" };
+      if (e.proc === "dock" && S.dockDoneAt == null) return { txt: `Dock marshal desde ${clock(S.plan.sortStart)}`, cls: "later" };
       return { txt: e.proc === "dock" ? "Camiones recibidos" : "Oleadas terminadas", cls: "idle" };
     }
     const on = e.proc === "pick" ? pickOn : e.proc === "ps" ? sortOn || pickOn : sortOn;
     if (on) return { txt: PROC[e.proc], cls: "on" };
     if (e.proc === "pick" && !pickOn && !S.over) return { txt: `Pick desde ${clock(S.plan.pickStart)}`, cls: "later" };
     if (!sortOn && S.sortDoneAt != null) return { txt: "Sort terminado", cls: "idle" };
-    return { txt: `${PROC[e.proc]} desde ${clock(S.plan.firstTruck - 15)}`, cls: "later" };
+    return { txt: `${PROC[e.proc]} desde ${clock(S.plan.sortStart)}`, cls: "later" };
   }
 
   function data() {

@@ -11,8 +11,10 @@
   const n0 = (v) => String(Math.round(v)).replace(/\B(?=(\d{3})+(?!\d))/g, ".");
   const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
-  function build(E, sc) {
+  // opts.hourly: coste de una hora de trabajo por persona (€), para el coste del turno y por paquete
+  function build(E, sc, opts) {
     const S = E.S, L = E.L, m = E.metrics(), q = m.quality, clock = E.clock;
+    const hourly = (opts && opts.hourly) || (L.cost && L.cost.hourly) || 0;
     const fmt = (min) => (min < 90 ? Math.round(min) + " min" : (min / 60).toFixed(1).replace(".", ",") + " h");
     const sortEnd = S.sortDoneAt, cutoff = S.plan.cutoff;
 
@@ -35,6 +37,10 @@
       ["Rollover", String(m.rollover), "paquetes para mañana", m.rollover ? "bad" : "ok"],
       ["Horas trabajadas", dec(m.laborHours), "horas-persona"],
       ["Paquetes / hora trabajada", m.pph == null ? "—" : String(Math.round(m.pph)), "clasificados"],
+      ...(hourly ? [
+        ["Coste del turno", n0(m.laborHours * hourly) + " €", `${dec(m.laborHours)} h a ${String(hourly).replace(".", ",")} €/h`],
+        ["Coste por paquete", S.received ? (m.laborHours * hourly / S.received).toFixed(3).replace(".", ",") + " €" : "—", "horas trabajadas entre paquetes recibidos"],
+      ] : []),
       ["Llenado de saca", m.bagFill == null ? "—" : pct(m.bagFill)],
       ["Missort", pct(q.missortRate, 2), `${q.missort} paquetes`, q.missortRate > 0.005 ? "warn" : "ok"],
       ["DPMO", n0(q.dpmo), "defectos por millón"],

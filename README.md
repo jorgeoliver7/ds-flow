@@ -1,6 +1,6 @@
 # DS Flow · el viaje de un paquete
 
-Simulación de un turno de noche en una estación de reparto de última milla, del primer camión a la última furgoneta: unos 26.000 paquetes, 26 personas en el sort, 120 rutas en 24 estanterías y 6 oleadas de salida. Se ve cómo se mueve cada paquete por el plano y, a la vez, las métricas con las que se lleva una estación de verdad: hora prevista de fin del sort, rutas a tiempo, productividad por proceso, calidad y un informe al acabar el turno.
+Simulación de un turno de noche en una estación de reparto de última milla, del primer camión a la última furgoneta: unos 26.000 paquetes, un equipo de noche de 30 personas que entra a la 01:00 y descansa de 04:00 a 04:30, 120 rutas en 24 estanterías y 6 oleadas de salida. Se ve cómo se mueve cada paquete por el plano y, a la vez, las métricas con las que se lleva una estación de verdad: hora prevista de fin del sort, rutas a tiempo, productividad por proceso, calidad y un informe al acabar el turno.
 
 **Demo:** https://jorgeoliver7.github.io/ds-flow/
 
@@ -10,19 +10,22 @@ Forma parte del [portfolio de Jorge Acedo](https://jorgeoliver7.github.io/Portfo
 
 ## Cómo contar un turno con la app
 
+**Tour guiado** (botón "Presentar"): recorre un turno de falta de personal en 11 pasos y explica cada parte de la pantalla: el plan del turno, los KPIs, la recomendación (se aplica desde el tour), el planificador, el rastreo de paquetes, el descanso, los high value, las oleadas, la plantilla y el informe. Adelanta el turno hasta la hora de cada paso. Se mueve con las flechas y se sale con Esc.
+
 1. **Elige un escenario** arriba a la izquierda: noche normal, pico, falta de personal, camión retrasado o tarde (PM), el turno de same day con unos 500 paquetes que salen a las 18:00. Cada uno tiene su semilla, así que sale igual cada vez. También se puede enlazar directamente con `?escenario=pico`.
 2. **Sube la velocidad** a 180× o 600× para ver el turno entero en unos minutos.
-3. **Sigue la barra del turno**: camiones del plan (▼), corte del sort, oleadas de salida y el rombo con la hora prevista de fin del sort, en verde si llega al corte y en rojo si no.
+3. **Sigue la barra del turno**: camiones del plan (▼), descanso del equipo de noche, corte del sort, oleadas de salida y el rombo con la hora prevista de fin del sort, en verde si llega al corte y en rojo si no. En el descanso el sort se para (descarga, carros, inducción, stow y problem solve) y la previsión, el plan y la UPH ya lo cuentan.
 4. **Prueba el planificador** en "Procesos y plantilla": mueve personas con − y + y verás al instante la nueva hora de fin del sort, qué proceso marcaría el ritmo, las rutas que saldrían tarde, el rollover, las horas-persona que quedan y quién entraría o saldría de cada proceso (no es lo mismo quitar al más rápido que a alguien nuevo). **"Simular el resto del turno"** repite la partida exacta hasta ese momento y la sigue hasta la última furgoneta con y sin el cambio, para comparar el resultado real. Debajo está la **plantilla mínima** para llegar al corte con 15 min de margen, sacar todas las oleadas y cubrir los marshals; "Probar" la carga en el planificador.
 5. **Sigue las recomendaciones**: durante el turno la app avisa como lo haría un responsable de turno ("Mueve 1 de inducción a stow: el sort acabaría a las 05:52 en vez de a las 06:23"). Se aplican con un clic y quedan en la actividad.
 6. **Marshals**: un dock marshal hace el check-in de cada camión antes de que atraque y un yard marshal coloca y da la salida a las furgonetas durante las oleadas. Sin ellos no se para nada, pero los camiones tardan más en atracar y descargan más despacio, y las furgonetas tardan en aparcar y salen más tarde. Se ven en el plano (verde en su puesto, rojo si faltan) y se pueden quitar para ver el efecto.
 7. **Sigue los high value**: en el centro de control, la pestaña "High Values" lista los paquetes de valor alto del turno con dónde está cada uno ahora (camión, carro, saca, carro de pick, furgoneta...) y desde cuándo, y avisa si alguno está en problem solve, en una saca que no es la suya o se ha quedado sin su furgoneta. En el mapa llevan un marco dorado.
 8. **Mira la pestaña "Plantilla"**: cada persona del turno con un ID y un nombre inventados, su equipo (noche, mañana o tarde), dónde está ahora, horas, paquetes, UPH, % del objetivo, comparación con la media de su proceso y missorts. Marca a los mejores y a quien necesita seguimiento, permite mover a alguien de proceso y se descarga en CSV.
-9. **Al acabar se abre el informe** con lo que salió bien y lo que hay que mejorar, y compara la plantilla con la que se empezó con la mínima para ese volumen. Se puede descargar en CSV o guardar como PDF.
+9. **Al acabar se abre el informe** con lo que salió bien y lo que hay que mejorar, el coste del turno y por paquete, y compara la plantilla con la que se empezó con la mínima para ese volumen. Se puede descargar en CSV o guardar como PDF.
+10. **Compara escenarios** (botón "Comparar" o desde el informe): elige escenario y plantilla (la del escenario o la mínima para el corte) en cada lado y la app juega los dos turnos enteros en segundo plano. Sale una tabla con fin del sort, rutas a tiempo, rollover, horas-persona, productividad, DPMO y coste, y una frase con la conclusión ("B cuesta 26 € más que A: saca a tiempo 16 rutas más..."). El coste por hora es un valor de ejemplo que se cambia ahí mismo.
 
 ![Informe de fin de turno con falta de personal](docs/informe.jpg)
 
-**Modo presentación** (botón "Presentar" o tecla <kbd>P</kbd>): pantalla completa con el plano y los KPIs principales. La barra espaciadora pausa.
+**Modo presentación** (tecla <kbd>P</kbd>, o "Pantalla completa" al final del tour): pantalla completa con el plano y los KPIs principales. La barra espaciadora pausa.
 
 ![Modo presentación durante el pico](docs/presentacion.jpg)
 
@@ -35,7 +38,8 @@ Forma parte del [portfolio de Jorge Acedo](https://jorgeoliver7.github.io/Portfo
 | Rutas a tiempo | Furgonetas que salen dentro de la ventana de su oleada. |
 | Rollover | Paquetes que siguen en la estación cuando su ruta ya ha salido: se quedan para el día siguiente. |
 | UPH | Paquetes por hora y persona. En el panel es la última hora; en el informe, todo el turno entre las horas fichadas, así que las esperas también cuentan. |
-| Paq / h trabajada | Paquetes clasificados entre todas las horas-persona del turno. |
+| Paq / h trabajada | Paquetes clasificados entre todas las horas-persona del turno. El descanso no cuenta como hora trabajada. |
+| Coste del turno | Horas-persona de todo el turno (sort, pick y marshals) por el coste de una hora. Por paquete, entre los paquetes recibidos. |
 | Llenado de saca | Ocupación media de las sacas de las rutas que ya han salido. |
 | Missort | Paquetes que acaban en una saca que no es la suya. Se detectan en pick y vuelven por problem solve. |
 | DPMO | Defectos (dañados, sin etiqueta y missorts) por millón de paquetes recibidos. |
@@ -54,9 +58,9 @@ Forma parte del [portfolio de Jorge Acedo](https://jorgeoliver7.github.io/Portfo
 
 ```
 tipo;id;hora;paquetes
-camion;T-01;23:00;700
+camion;T-01;01:00;700
 ruta;R01;;420
-corte;;05:30;
+corte;;06:00;
 oleada;A;06:20;
 ```
 
@@ -80,11 +84,13 @@ JavaScript sin dependencias y Canvas. Sin build: es una página estática.
 | `crewui.js` | Pestaña de plantilla |
 | `scenarios.js` | Escenarios de la demo, cada uno con su semilla |
 | `report.js` | Informe de fin de turno y exportación a CSV |
+| `compare.js` | Comparación de dos turnos enteros con su coste |
+| `tour.js` | Tour guiado del botón "Presentar" |
 | `importcsv.js` | Lectura del CSV de una noche |
 | `render.js` | Dibujo del plano en Canvas |
 | `charts.js` | Gráficas pequeñas (plan frente a real, ritmo por hora) |
 | `ui.js` | Centro de control, planificador, high values, controles y bucle de animación |
-| `whatif-worker.js` | Simula el resto del turno en segundo plano para el planificador |
+| `whatif-worker.js` | Simula turnos en segundo plano: el resto del turno para el planificador y los turnos enteros de la comparación |
 | `test/` | Pruebas del motor (`npm test`) |
 
 ## Ejecutar en local
@@ -100,7 +106,7 @@ python3 -m http.server 8000
 npm test   # node --test, sin dependencias
 ```
 
-Comprueban que no se pierde ningún paquete, que la misma semilla da la misma partida, que el turno se completa, que la previsión se acerca a la hora real, que la estimación del planificador se acerca a la simulación completa, que simular el resto del turno repite la partida exacta, el efecto de los marshals, los high value, las incidencias, los escenarios y la importación del CSV. Se ejecutan en cada PR con GitHub Actions.
+Comprueban que no se pierde ningún paquete, que la misma semilla da la misma partida, que el turno se completa, que la previsión se acerca a la hora real, que la estimación del planificador se acerca a la simulación completa, que simular el resto del turno repite la partida exacta, el efecto de los marshals, el descanso, la comparación de escenarios, los high value, las incidencias, los escenarios y la importación del CSV. Se ejecutan en cada PR con GitHub Actions.
 
 ## Despliegue
 
