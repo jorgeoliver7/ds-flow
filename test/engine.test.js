@@ -71,7 +71,7 @@ test("el planificador prevé un sort más temprano con más gente y más tarde c
 test("métricas por proceso, horas trabajadas y tiempo de ciclo", () => {
   const E = shift({ seed: 7 });
   const m = E.metrics();
-  assert.deepEqual(m.processes.map((p) => p.key), ["receive", "induct", "stow", "pick", "ps"]);
+  assert.deepEqual(m.processes.map((p) => p.key), ["receive", "induct", "stow", "pick", "ps", "dock", "yard"]);
   assert.ok(m.laborHours > 50 && m.laborHours < 250, `horas ${m.laborHours}`);
   assert.ok(m.pph > 0);
   for (const c of m.cycle) assert.ok(c.min > 0, c.key);
@@ -203,10 +203,10 @@ test("la recomendación en directo mueve gente al cuello de botella y adelanta e
   while (E.S.t < 30) E.step(0.1);
   const adv = E.advise();
   assert.ok(adv, "hay recomendación");
-  assert.equal(adv.id, "move:induct:stow");
-  assert.ok(adv.staff.stow > E.S.staff.stow);
+  assert.ok(adv.id.startsWith("move:"), adv.id);
+  assert.ok(adv.staff.stow > E.S.staff.stow, "stow es el cuello de botella");
   const before = E.forecast().sortEnd;
-  Object.assign(E.S.staff, adv.staff);
+  E.setStaff(adv.staff); E.step();
   assert.ok(E.forecast().sortEnd < before - 5);
   // con la estación sobrada no recomienda nada
   const N = DSEngine.create(L, SC.options(L, "normal"));
@@ -236,4 +236,65 @@ test("plantilla con nombre: cada proceso tiene a sus personas y el trabajo se re
   // si no queda nadie en el equipo, entra un temporal
   S.staff.stow += 20; E.step(0.05);
   assert.ok(crew.byProc.stow.some((e) => e.temp));
+});
+
+test("simular el resto del turno repite la partida exacta hasta ahora, con las acciones del usuario", () => {
+  const SC = require("../scenarios.js");
+  const E = DSEngine.create(L, SC.options(L, "normal")), S = E.S;
+  while (S.t < 60) E.step();
+  E.setStaff({ ...S.staff, stow: 15, induct: 6 });
+  while (S.t < 120) E.step();
+  E.addTruck();
+  E.moveWorker(S.crew.byProc.receive[0].id, "stow");
+  while (S.t < 200) E.step();
+  const at = S.steps;
+  // sin cambios, la proyección es lo mismo que dejar correr la partida
+  const p = DSEngine.project(E.spec.L, E.spec.opts, S.actions, at, null);
+  while (!S.over && S.t < S.plan.end + 240) E.step();
+  assert.deepEqual(p, E.summary());
+});
+
+test("la estimación al instante se acerca a la simulación completa", () => {
+  const SC = require("../scenarios.js");
+  const o = SC.options(L, "normal");
+  for (const change of [{ receive: 2 }, { induct: 4 }, { stow: 13 }]) {
+    const E = DSEngine.create(L, o);
+    while (E.S.t < 30) E.step();
+    const draft = { ...E.S.staff, ...change }, w = E.whatIf(draft);
+    const real = DSEngine.project(E.spec.L, E.spec.opts, E.S.actions, E.S.steps, draft);
+    assert.ok(Math.abs(w.then.sortEnd - real.sortEnd) < 15, `${JSON.stringify(change)}: previsto ${E.clock(w.then.sortEnd)}, real ${E.clock(real.sortEnd)}`);
+    assert.ok(w.then.sortEnd > w.now.sortEnd + 20, "y se ve que empeora");
+  }
+  // la zona de carros cuenta: con una sola persona es ella la que marca el ritmo
+  const E = DSEngine.create(L, o);
+  assert.equal(E.bottleneck({ ...E.S.staff, receive: 1 }).key, "receive");
+  // y la previsión dice quién entraría
+  const w = E.whatIf({ ...E.S.staff, stow: E.S.staff.stow + 1 });
+  assert.equal(w.joins.length, 1); assert.equal(w.joins[0].to, "stow");
+});
+
+test("sin dock marshal los camiones tardan más en atracar y lo recomienda", () => {
+  const SC = require("../scenarios.js");
+  const o = SC.options(L, "normal");
+  const a = DSEngine.create(L, o), b = DSEngine.create(L, { ...o, staff: { dock: 0 } });
+  run(a, 30); run(b, 30);
+  const first = (E) => E.S.plan.trucks[0].dockedAt;
+  assert.ok(first(a) >= L.docks.marshal.checkInMin && first(a) < first(b), `${first(a)} / ${first(b)}`);
+  assert.ok(first(b) >= L.docks.marshal.selfCheckInMin);
+  assert.equal(b.advise().id, "add:dock");
+  assert.ok(b.forecast().sortEnd > a.forecast().sortEnd);
+  // el check-in se apunta a la persona que hace de dock marshal
+  assert.ok(a.S.crew.byProc.dock[0].units.dock >= 1);
+});
+
+test("sin yard marshal en las oleadas las furgonetas salen más tarde", () => {
+  const SC = require("../scenarios.js");
+  const o = SC.options(L, "normal");
+  const a = shift(o), b = shift({ ...o, staff: { yard: 0 } });
+  const wait = (E) => DSEngine.avg(E.S.routes.map((r) => r.departAt - r.wave.at));
+  assert.ok(wait(b) > wait(a) + 3, `${wait(a)} / ${wait(b)}`);
+  assert.ok(b.metrics().routesLate > a.metrics().routesLate);
+  // el yard marshal solo cuenta horas durante las oleadas
+  const yardH = a.S.procMin.yard / 60;
+  assert.ok(yardH > 1 && yardH < 3, `yard ${yardH} h`);
 });

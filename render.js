@@ -118,9 +118,34 @@
       }
       text("DOCK", D.right + 22, D.wallY - 60, MONO(600, 10), C.muted);
       text(D.count + " muelles", D.right + 22, D.wallY - 44, MONO(500, 10), C.muted);
+      // camiones esperando en la puerta: check-in o muelle libre
+      if (S.gate.length) text(`${S.gate.length} en puerta`, D.right + 22, D.wallY - 78, MONO(600, 10), C.warn);
+      if (D.marshal) marshalBadge("dock", D.right + 16, D.wallY - 32);
     }
 
     const ease = (p) => 1 - Math.pow(1 - Math.min(Math.max(p, 0), 1), 3);
+
+    // Marshal en su puesto: verde si está cuando hace falta, rojo si falta, gris fuera de su horario.
+    // Devuelve el recuadro para poder pulsarlo en el mapa.
+    const badges = {};
+    function marshalBadge(key, x, y, right) {
+      const n = S.staff[key], on = E.marshalsOn()[key], miss = on && !n;
+      const label = miss ? `Sin ${key} marshal` : `${n > 1 ? n + " × " : ""}${key === "dock" ? "Dock" : "Yard"} marshal`;
+      const col = miss ? C.bad : on ? C.ok : C.muted;
+      ctx.font = SANS(600, 10);
+      const w = ctx.measureText(label).width + 30, h = 20;
+      if (right) x -= w;
+      ctx.fillStyle = C.zone; rr(x, y, w, h, 10); ctx.fill();
+      ctx.lineWidth = isSel("marshal", key) ? 2 : 1; ctx.strokeStyle = isSel("marshal", key) ? C.sel : col; ctx.stroke();
+      // persona: cabeza y hombros (tachada si falta)
+      ctx.fillStyle = col;
+      ctx.beginPath(); ctx.arc(x + 12, y + 7, 3, 0, Math.PI * 2); ctx.fill();
+      rr(x + 7, y + 11, 10, 6, 3); ctx.fill();
+      if (miss) { ctx.strokeStyle = C.bad; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(x + 5, y + 17); ctx.lineTo(x + 19, y + 3); ctx.stroke(); }
+      ctx.textBaseline = "middle";
+      text(label, x + 23, y + h / 2 + 0.5, SANS(600, 10), miss ? C.bad : on ? C.fg : C.muted);
+      badges[key] = { x, y, w, h };
+    }
 
     function drawTruck(t) {
       const off = t.state === "arriving" ? (1 - ease(t.p)) * -130 : t.state === "leaving" ? ease(t.p) * -130 : 0;
@@ -314,6 +339,8 @@
       ctx.textBaseline = "top";
       text(Y.code, Y.x + 12, Y.y + 9, MONO(600, 10), C.muted);
       text("Yard · furgonetas", Y.x + 44, Y.y + 8, SANS(600, 12), C.fg);
+      if (Y.marshal) marshalBadge("yard", Y.x + Y.w - 10, Y.y + 4, true);
+      ctx.textBaseline = "top";
       // carril central: entrada por abajo, salida por arriba
       const lx = Y.x + Y.w / 2;
       ctx.save(); ctx.strokeStyle = C.grid; ctx.lineWidth = 2; ctx.setLineDash([10, 10]); ctx.lineDashOffset = S.paused ? 0 : NOW * 20;
@@ -464,6 +491,7 @@
       let best = null, bd = 10;
       for (const tr of S.transit) { const p = posOf(tr), d = Math.hypot(p.x - x, p.y - y); if (d < bd) { bd = d; best = tr.pkg; } }
       if (best) return { kind: "pkg", id: best.id };
+      for (const k in badges) if (inside(x, y, { ...badges[k], x: badges[k].x - 4, y: badges[k].y - 4, w: badges[k].w + 8, h: badges[k].h + 8 })) return { kind: "marshal", id: k };
       for (const t of S.trucks) if (y < D.wallY && Math.abs(x - dockX(t.dock)) < 34) return { kind: "truck", id: t.id };
       for (const v of S.vans) if (inside(x, y, padRect(v.pad))) return { kind: "van", id: v.id };
       for (const r of S.routes) if (inside(x, y, bagRect(r))) return { kind: "route", id: r.n };

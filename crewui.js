@@ -8,11 +8,13 @@
   const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
   const num = (v) => String(Math.round(v)).replace(/\B(?=(\d{3})+(?!\d))/g, ".");
   const pct = (v) => (v == null ? "—" : Math.round(v * 100) + "%");
-  const PROC = { receive: "Zona de carros", induct: "Inducción", stow: "Stow", pick: "Pick", ps: "Problem solve" };
-  const SHORT = { receive: "Carros", induct: "Inducción", stow: "Stow", pick: "Pick", ps: "PS" };
+  const PROC = { receive: "Zona de carros", induct: "Inducción", stow: "Stow", pick: "Pick", ps: "Problem solve", dock: "Dock marshal", yard: "Yard marshal" };
+  const SHORT = { receive: "Carros", induct: "Inducción", stow: "Stow", pick: "Pick", ps: "PS", dock: "Dock M.", yard: "Yard M." };
+  // los marshals no mueven paquetes: cuentan camiones recibidos y furgonetas despachadas, sin objetivo de UPH
+  const MARSHAL = { dock: "camiones", yard: "furgonetas" };
   const TEAM = { noche: "Noche", "mañana": "Mañana", tarde: "Tarde" };
   const FLAG = { top: ["Top", "ok"], low: ["Por debajo", "warn"], quality: ["Calidad", "bad"] };
-  const TARGETS = { receive: L.receive.uph, induct: L.induct.uph, stow: L.stow.uph, pick: L.pick.uph, ps: L.problem.uph };
+  const TARGETS = { receive: L.receive.uph, induct: L.induct.uph, stow: L.stow.uph, pick: L.pick.uph, ps: L.problem.uph, dock: null, yard: null };
 
   const view = $("#ds-crew"), main = document.querySelector(".ds-main");
   let filter = "all", sortKey = "proc", sortDir = 1, selected = null, rows = [];
@@ -33,9 +35,15 @@
   function status(e, S) {
     const sortOn = S.t >= S.plan.firstTruck - 15 && S.sortDoneAt == null, pickOn = S.t >= S.plan.pickStart && !S.over;
     if (!e.proc) return { txt: e.bench ? "Disponible" : "Libre", cls: "idle" };
+    const clock = E().clock;
+    if (MARSHAL[e.proc]) {
+      if (E().marshalsOn()[e.proc]) return { txt: PROC[e.proc], cls: "on" };
+      if (e.proc === "yard" && !S.over) return { txt: `Yard marshal desde ${clock(S.plan.firstWave - (L.yard.marshal ? L.yard.marshal.before : 15))}`, cls: "later" };
+      if (e.proc === "dock" && S.dockDoneAt == null) return { txt: `Dock marshal desde ${clock(S.plan.firstTruck - 15)}`, cls: "later" };
+      return { txt: e.proc === "dock" ? "Camiones recibidos" : "Oleadas terminadas", cls: "idle" };
+    }
     const on = e.proc === "pick" ? pickOn : e.proc === "ps" ? sortOn || pickOn : sortOn;
     if (on) return { txt: PROC[e.proc], cls: "on" };
-    const clock = E().clock;
     if (e.proc === "pick" && !pickOn && !S.over) return { txt: `Pick desde ${clock(S.plan.pickStart)}`, cls: "later" };
     if (!sortOn && S.sortDoneAt != null) return { txt: "Sort terminado", cls: "idle" };
     return { txt: `${PROC[e.proc]} desde ${clock(S.plan.firstTruck - 15)}`, cls: "later" };
@@ -44,7 +52,7 @@
   function data() {
     const eng = E(), S = eng.S, crew = S.crew;
     if (!crew) return [];
-    return crew.stats(TARGETS).map((e) => ({ ...e, st: status(e, S), uph: e.hours > 0.25 ? e.units / e.hours : null }));
+    return crew.stats(TARGETS).map((e) => ({ ...e, st: status(e, S), uph: e.hours > 0.25 && !MARSHAL[e.primary] ? e.units / e.hours : null }));
   }
 
   const FILTERS = [["all", "Todos"], ["working", "Trabajando hoy"], ...Object.entries(SHORT), ["free", "Disponibles"], ["top", "Top"], ["flag", "Con aviso"], ["new", "Nuevos"]];
@@ -112,10 +120,13 @@
     const e = rows.find((x) => x.id === selected);
     if (!e) { el.innerHTML = `<p class="ds-hint">Pulsa una persona para ver su turno: horas y paquetes por proceso, missorts y cambios de puesto. Desde aquí también se la puede mover de proceso.</p>`; return; }
     const eng = E(), S = eng.S, crew = S.crew, person = crew.people.find((p) => p.id === e.id);
-    const procs = e.procs.length ? e.procs.map((p) => `<tr><td>${PROC[p.key]}</td><td>${p.hours.toFixed(1).replace(".", ",")}</td><td>${num(p.units)}</td><td>${p.uph == null ? "—" : Math.round(p.uph)}</td><td>${p.key === "ps" ? "—" : p.target}</td><td>${pct(p.vsTeam)}</td></tr>`).join("") : `<tr><td colspan="6" class="ds-hint">Aún no ha trabajado en este turno.</td></tr>`;
+    const procs = e.procs.length ? e.procs.map((p) => MARSHAL[p.key]
+      ? `<tr><td>${PROC[p.key]}</td><td>${p.hours.toFixed(1).replace(".", ",")}</td><td>${num(p.units)} ${MARSHAL[p.key]}</td><td>—</td><td>—</td><td>—</td></tr>`
+      : `<tr><td>${PROC[p.key]}</td><td>${p.hours.toFixed(1).replace(".", ",")}</td><td>${num(p.units)}</td><td>${p.uph == null ? "—" : Math.round(p.uph)}</td><td>${p.key === "ps" ? "—" : p.target}</td><td>${pct(p.vsTeam)}</td></tr>`).join("") : `<tr><td colspan="6" class="ds-hint">Aún no ha trabajado en este turno.</td></tr>`;
     const moves = e.moves.length ? e.moves.map((m) => `<li><time>${eng.clock(m.t)}</time>${m.from ? PROC[m.from] : "Disponible"} → ${m.to ? PROC[m.to] : "Disponible"}</li>`).join("") : `<li class="ds-hint">Sin cambios de puesto.</li>`;
     // a qué procesos se le puede mover: los de su equipo; sin formación rinde al 75%
-    const lone = e.proc && crew.byProc[e.proc].length <= 1;
+    // un marshal sí se puede quitar (para ver qué pasa sin él); un proceso de paquetes no se queda vacío
+    const lone = e.proc && !MARSHAL[e.proc] && crew.byProc[e.proc].length <= 1;
     const targets = Object.keys(PROC).filter((k) => crew.teamOf(k) === e.team && k !== e.proc);
     const btn = (k) => `<button class="ds-btn ds-btn--ghost" data-move="${k}" ${lone ? "disabled" : ""} title="${e.skills.includes(k) ? "" : "Sin formación: rendiría al 75%"}">${SHORT[k]}${e.skills.includes(k) ? "" : " *"}</button>`;
     el.innerHTML = `
@@ -147,9 +158,8 @@
   });
   $("#ds-crew-detail").addEventListener("click", (ev) => {
     const b = ev.target.closest("[data-move]"); if (!b || b.disabled) return;
-    const eng = E(), crew = eng.S.crew, p = crew.people.find((x) => x.id === selected);
-    const c = crew.move(p, b.dataset.move || null);
-    if (c) eng.log(`${c.name} (${c.id}) ${c.from && c.to ? `pasa de ${PROC[c.from].toLowerCase()} a ${PROC[c.to].toLowerCase()}` : c.to ? `entra en ${PROC[c.to].toLowerCase()}` : `queda disponible`}`, "warn");
+    // pasa por el motor para que quede apuntado y se pueda repetir al simular el resto del turno
+    E().moveWorker(selected, b.dataset.move || null);
     render();
   });
   $("#ds-crew-pause").addEventListener("click", () => { $("#ds-pause").click(); render(); });
