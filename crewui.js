@@ -34,20 +34,24 @@
   // Dónde está cada persona ahora mismo, en palabras
   function status(e, S) {
     const sortOn = S.t >= S.plan.sortStart && S.sortDoneAt == null, pickOn = S.t >= S.plan.pickStart && !S.over;
+    // el manager no está en ningún proceso: lleva el turno
+    if (e.lead) return { txt: `${e.role}: dirige el turno`, cls: "on" };
     if (!e.proc) return { txt: e.bench ? "Disponible" : "Libre", cls: "idle" };
     const clock = E().clock;
     if (MARSHAL[e.proc]) {
-      if (E().marshalsOn()[e.proc]) return { txt: PROC[e.proc], cls: "on" };
+      // en la tarde los camiones los recibe un yard marshall
+      if (E().marshalsOn()[e.proc]) return { txt: e.proc === "dock" && e.primary === "yard" ? "Yard marshall en los muelles: camiones" : PROC[e.proc], cls: "on" };
       if (e.proc === "yard" && !S.over) return { txt: `Yard marshall desde ${clock(S.plan.firstWave - (L.yard.marshal ? L.yard.marshal.before : 15))}`, cls: "later" };
-      if (e.proc === "dock" && S.dockDoneAt == null) return { txt: `Dock marshall desde ${clock(S.plan.sortStart)}`, cls: "later" };
+      if (e.proc === "dock" && S.dockDoneAt == null) return { txt: `Dock marshall desde ${clock(S.plan.dockStart)}`, cls: "later" };
       return { txt: e.proc === "dock" ? "Camiones recibidos" : "Oleadas terminadas", cls: "idle" };
     }
     const on = e.proc === "pick" ? pickOn : e.proc === "ps" ? sortOn || pickOn : sortOn;
     if (on) return { txt: PROC[e.proc], cls: "on" };
     if (e.proc === "pick" && !pickOn && !S.over) return { txt: `Pick desde ${clock(S.plan.pickStart)}`, cls: "later" };
-    // tras el sort, la noche sigue hasta su hora de salida haciendo rutas y buscando paquetes perdidos
-    if (!sortOn && S.sortDoneAt != null && e.proc !== "ps" && S.plan.nightEnd != null && S.t < S.plan.nightEnd && e.team === "noche")
-      return { txt: `Apoyo: rutas y paquetes perdidos (hasta las ${clock(S.plan.nightEnd)})`, cls: "on" };
+    // tras el sort, la noche sigue hasta su hora de salida haciendo rutas y buscando paquetes perdidos;
+    // la tarde también sigue fichada hasta su salida
+    if (!sortOn && S.sortDoneAt != null && e.proc !== "ps" && S.plan.teamEnd != null && S.t < S.plan.teamEnd && e.team !== "mañana")
+      return { txt: e.team === "noche" ? `Apoyo: rutas y paquetes perdidos (hasta las ${clock(S.plan.teamEnd)})` : `Apoyo en la estación (hasta las ${clock(S.plan.teamEnd)})`, cls: "on" };
     if (!sortOn && S.sortDoneAt != null) return { txt: "Sort terminado", cls: "idle" };
     return { txt: `${PROC[e.proc]} desde ${clock(S.plan.sortStart)}`, cls: "later" };
   }
@@ -61,8 +65,8 @@
   const FILTERS = [["all", "Todos"], ["working", "Trabajando hoy"], ...Object.entries(SHORT), ["free", "Disponibles"], ["top", "Top"], ["flag", "Con aviso"], ["new", "Nuevos"]];
   function pass(e) {
     if (filter === "all") return true;
-    if (filter === "working") return !!e.proc;
-    if (filter === "free") return !e.proc;
+    if (filter === "working") return !!e.proc || e.lead;
+    if (filter === "free") return !e.proc && !e.lead;
     if (filter === "top") return e.flag === "top";
     if (filter === "flag") return e.flag === "low" || e.flag === "quality";
     if (filter === "new") return e.tenure < 3;
@@ -84,7 +88,7 @@
     $("#ds-crew-pause").textContent = S.paused ? "▶ Seguir" : "❚❚ Pausa";
 
     // resumen del equipo
-    const working = rows.filter((e) => e.proc), hours = rows.reduce((s, e) => s + e.hours, 0);
+    const working = rows.filter((e) => e.proc || e.lead), hours = rows.reduce((s, e) => s + e.hours, 0);
     const flagged = rows.filter((e) => e.flag === "low" || e.flag === "quality").length, top = rows.filter((e) => e.flag === "top").length;
     const fresh = working.filter((e) => e.tenure < 3).length, temps = rows.filter((e) => e.temp).length;
     const kp = [
@@ -108,7 +112,7 @@
     const ratioCls = (r) => (r == null ? "" : r >= 1.05 ? "is-ok" : r < 0.9 ? "is-warn" : "");
     $("#ds-crew-table").innerHTML = `<thead><tr>${th("id", "ID")}${th("name", "Nombre")}${th("team", "Equipo")}${th("proc", "Ahora")}${th("hours", "Horas")}${th("units", "Paquetes")}${th("uph", "UPH")}${th("ratio", "% obj.", "UPH por hora fichada frente al objetivo del proceso")}${th("vsTeam", "vs equipo", "UPH frente a la media de su proceso en este turno")}${th("missort", "Missort")}<th>Aviso</th></tr></thead>
       <tbody>${list.map((e) => `<tr data-id="${e.id}" class="${selected === e.id ? "is-sel" : ""}">
-        <td class="ds-mono">${e.id}</td><td>${esc(e.name)}${e.tenure < 3 ? ' <span class="ds-tag">nuevo</span>' : ""}${e.temp ? ' <span class="ds-tag">ETT</span>' : ""}</td>
+        <td class="ds-mono">${e.id}</td><td>${esc(e.name)}${e.role ? ` <span class="ds-tag">${e.role.toLowerCase()}</span>` : ""}${e.tenure < 3 ? ' <span class="ds-tag">nuevo</span>' : ""}${e.temp ? ' <span class="ds-tag">ETT</span>' : ""}</td>
         <td>${TEAM[e.team]}</td><td><i class="ds-st is-${e.st.cls}"></i>${e.st.txt}</td>
         <td class="ds-mono">${e.hours ? e.hours.toFixed(1).replace(".", ",") : "—"}</td><td class="ds-mono">${e.units ? num(e.units) : "—"}</td>
         <td class="ds-mono">${e.uph == null ? "—" : Math.round(e.uph)}</td><td class="ds-mono">${pct(e.ratio)}</td>
@@ -147,9 +151,9 @@
       <h4>Por proceso</h4>
       <table class="ds-mini"><thead><tr><th>Proceso</th><th>Horas</th><th>Paq.</th><th>UPH</th><th>Obj.</th><th>vs eq.</th></tr></thead><tbody>${procs}</tbody></table>
       <h4>Cambios de puesto</h4><ul class="ds-log">${moves}</ul>
-      <h4>Mover a</h4>
+      ${e.lead ? `<p class="ds-hint">El manager no está en ningún proceso ni cuenta en las horas-persona.</p>` : `<h4>Mover a</h4>
       <div class="ds-move">${targets.map(btn).join("")}${e.proc ? `<button class="ds-btn ds-btn--ghost" data-move="" ${lone ? "disabled" : ""}>Disponible</button>` : ""}</div>
-      ${lone ? `<p class="ds-hint">Es la única persona en ${PROC[e.proc].toLowerCase()}: no se puede quedar vacío.</p>` : `<p class="ds-hint">* sin formación en ese proceso: rendiría al 75%.</p>`}`;
+      ${lone ? `<p class="ds-hint">Es la única persona en ${PROC[e.proc].toLowerCase()}: no se puede quedar vacío.</p>` : `<p class="ds-hint">* sin formación en ese proceso: rendiría al 75%.</p>`}`}`;
   }
 
   // ── Interacción ──────────────────────────────────────
@@ -170,7 +174,7 @@
     const head = ["ID", "Nombre", "Equipo", "Proceso habitual", "Habilidades", "Antigüedad (meses)", "Ahora", "Horas", "Paquetes", "UPH", "% objetivo", "vs equipo", "Missorts", "Missort %", "Aviso"];
     const cell = (v) => { const s = String(v ?? ""); return /[;"\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
     const dec = (v, d) => (v == null ? "" : v.toFixed(d).replace(".", ","));
-    const lines = data().map((e) => [e.id, e.name, TEAM[e.team], PROC[e.primary], e.skills.map((k) => SHORT[k]).join(", "), e.tenure, e.st.txt, dec(e.hours, 2), e.units,
+    const lines = data().map((e) => [e.id, e.name, TEAM[e.team], e.role || PROC[e.primary], e.skills.map((k) => SHORT[k]).join(", "), e.tenure, e.st.txt, dec(e.hours, 2), e.units,
       e.uph == null ? "" : Math.round(e.uph), dec(e.ratio && e.ratio * 100, 0), dec(e.vsTeam && e.vsTeam * 100, 0), e.missorts, dec(e.missortRate && e.missortRate * 100, 2), e.flag ? FLAG[e.flag][0] : ""]);
     const csv = "﻿" + [head, ...lines].map((r) => r.map(cell).join(";")).join("\r\n") + "\r\n";
     const a = document.createElement("a");

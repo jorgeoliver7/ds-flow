@@ -379,14 +379,32 @@ test("tarde: los camiones de antes de las 16:00 se quedan en la playa para la no
   assert.ok(S.sortDoneAt != null && S.sortDoneAt <= S.plan.cutoff, "el sameday acaba antes del corte");
   const m = E.metrics();
   assert.ok(m.routesOut > 0 && m.routesLate === 0, "todas las rutas de las 18:00 salen a tiempo");
-  assert.equal(m.rollover, 0);
+  assert.ok(m.rollover <= 2, `rollover ${m.rollover}`);
 });
 
-test("tras el sort, el equipo de noche sigue fichado hasta las 09:30 (rutas y paquetes perdidos)", () => {
+test("el equipo de noche sigue fichado hasta las 09:30 aunque acabe antes (rutas y paquetes perdidos)", () => {
   const SC = require("../scenarios.js");
   const E = shift(SC.options(L, "normal")), S = E.S, m = E.metrics();
-  const n = S.staff.receive + S.staff.induct + S.staff.stow;
-  const expect = (n * E.workBetween(S.sortDoneAt, S.plan.nightEnd)) / 60;
-  assert.ok(Math.abs(m.supportHours - expect) < 1e-6, `${m.supportHours} / ${expect}`);
-  assert.equal(E.clock(S.plan.nightEnd), "09:30");
+  assert.equal(E.clock(S.plan.teamEnd), "09:30");
+  // sort, problem solve y dock marshall cuentan de 01:00 a 09:30 (sin el descanso); pick y yard, solo mientras trabajan
+  const night = ["receive", "induct", "stow", "ps", "dock"].reduce((s, k) => s + S.staff[k], 0) * E.workBetween(S.plan.sortStart, S.plan.teamEnd);
+  const expect = (night + S.procMin.pick + S.procMin.yard) / 60;
+  assert.ok(Math.abs(m.laborHours - expect) < 0.1, `${m.laborHours} / ${expect}`);
+  assert.ok(m.supportHours > 50 && m.supportHours < m.laborHours, `apoyo ${m.supportHours}`);
+});
+
+test("tarde: 4 asociados, supervisor y 2 yard marshall fichados hasta las 21:00; el manager no cuenta", () => {
+  const SC = require("../scenarios.js");
+  const E = DSEngine.create(L, SC.options(L, "pm")), S = E.S;
+  const crew = S.crew.people, base = crew.filter((e) => !e.bench);
+  assert.equal(base.filter((e) => !e.role && !e.lead && !["dock", "yard"].includes(e.primary)).length, 4, "4 asociados");
+  assert.equal(base.filter((e) => e.primary === "yard").length, 2, "2 yard marshall");
+  assert.deepEqual(base.filter((e) => e.role).map((e) => e.role).sort(), ["Manager", "Supervisor"]);
+  assert.deepEqual(crew.filter((e) => e.bench).map((e) => e.role || "asociado").sort(), ["Supervisor", "asociado", "asociado"], "refuerzo: 2 asociados y 1 supervisor");
+  run(E, 600);
+  assert.ok(S.over && S.dockDoneAt != null);
+  assert.equal(S.staff.dock, 0, "acabada la descarga, el de muelles pasa al yard");
+  assert.equal(S.staff.yard, 2);
+  // 5 en sort y pick (4 asociados + supervisor) de 16:00 a 21:00 y 2 marshalls de 14:00 a 21:00
+  assert.ok(Math.abs(E.metrics().laborHours - (5 * 5 + 2 * 7)) < 0.05, `${E.metrics().laborHours}`);
 });

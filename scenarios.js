@@ -35,18 +35,22 @@
     },
     {
       id: "pm", name: "Tarde (PM, same day)", seed: 58,
-      desc: "Turno de tarde: los camiones de las 14:30 y las 15:30 traen carga para la noche, que se descarga y se deja en la playa. El de las 16:00 trae unos 500 paquetes de same day, que se procesan para las 8 rutas de las 18:00.",
+      desc: "Turno de tarde: 2 yard marshall desde las 14:00 y 4 asociados de 16:00 a 21:00, con un manager y un supervisor. Los camiones de las 14:30 y las 15:30 traen carga para la noche, que se descarga y se deja en la playa. El de las 16:00 trae unos 500 paquetes de same day, que se procesan para las 8 rutas de las 18:00.",
       shift: (sh) => ({
-        ...sh, start: "14:00", sortStart: "14:00", nightEnd: null, breaks: [],
+        ...sh, start: "14:00", sortStart: "16:00", nightEnd: null, breaks: [],
+        // todos fichados hasta las 21:00: los yard marshall desde las 14:00 y los asociados desde las 16:00
+        teamEnd: "21:00", marshalsIn: "14:00", teamProcs: ["receive", "induct", "stow", "pick", "ps", "dock", "yard"],
+        // uno de los yard marshall recibe los camiones y, acabada la descarga, pasa al yard con el otro
+        dockToYard: true,
         trucks: [
           { at: "14:30", units: 1800, hold: true }, { at: "15:30", units: 1600, hold: true },
           { at: "16:00", units: 500 },
         ],
-        sortCutoff: "17:00", events: [],
+        sortCutoff: "17:45", events: [],
         waves: [{ at: "18:00", aisles: ["A"] }],
       }),
-      staff: () => ({ receive: 1, induct: 1, stow: 3, pick: 3, ps: 1 }),
-      // solo salen las 8 rutas del pasillo A; el resto no tiene volumen por la tarde
+      // 4 asociados: carros, inducción, stow y pick (los incidentes los resuelve quien los encuentra); 2 yard marshall
+      staff: () => ({ receive: 1, induct: 1, stow: 1, pick: 1, ps: 1, dock: 1, yard: 1 }),
       routes: [1.2, 0.8, 1, 1.4, 0.6, 1.1, 0.9, 1],
     },
   ];

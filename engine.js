@@ -138,6 +138,7 @@
       issues: { damaged: 0, noLabel: 0, missort: 0 }, writtenOff: 0, unsorted: 0,
       hourly: [],               // por hora del turno: { stow, induct, pick, staff }
       laborMin: 0,              // minutos-persona trabajados
+      supportMin: 0,            // de ellos, fichados sin trabajo en su proceso (apoyo)
       cyc: { dockInduct: [0, 0], inductStow: [0, 0], stowPick: [0, 0], pickOut: [0, 0] },
       events: [],
       hv: [],                   // paquetes high value del turno, para seguirlos uno a uno
@@ -193,6 +194,14 @@
     // Sin horario en el plan, el equipo llega un cuarto de hora antes del primer camión y no para.
     S.plan.sortStart = SH.sortStart ? at(SH.sortStart) : S.plan.firstTruck - 15;
     S.plan.nightEnd = SH.nightEnd ? at(SH.nightEnd) : null;
+    // Equipo fichado de su entrada a su salida (teamEnd): esas horas cuentan aunque su proceso no tenga trabajo.
+    // De noche, el sort, problem solve y el dock marshall hasta las 09:30; la tarde es un solo equipo que lo hace todo.
+    // Los marshalls entran a marshalsIn (si no, con el sort); el resto, a sortStart.
+    S.plan.teamEnd = SH.teamEnd ? at(SH.teamEnd) : S.plan.nightEnd;
+    S.plan.teamProcs = SH.teamProcs || ["receive", "induct", "stow", "ps", "dock"];
+    S.plan.marshalsIn = SH.marshalsIn ? at(SH.marshalsIn) : S.plan.sortStart;
+    // el dock marshall hace falta desde el primer camión, también el de la carga de la noche
+    S.plan.dockStart = Math.min(S.plan.sortStart, ...S.plan.trucks.map((x) => x.at));
     S.plan.breaks = (SH.breaks || []).map((b) => ({ from: at(b.at), to: at(b.at) + b.minutes, minutes: b.minutes }));
     // paquetes de la carga de la noche descargados en este turno (se quedan en la playa)
     S.held = 0;
@@ -532,7 +541,8 @@
       for (const t of S.trucks) {
         if (t.state === "arriving") { t.p += dt / VEH; if (t.p >= 1) { t.state = "unloading"; t.p = 1; } }
         else if (t.state === "unloading") {
-          if (idle) continue;
+          // la carga de la noche la descargan los marshalls aunque el sort no haya empezado
+          if (idle && !t.hold) continue;
           // sin dock marshall nadie ordena muelles ni carros vacíos: la descarga va más lenta
           t.acc += (D.unloadRate / 60) * dt * (S.staff.dock ? 1 : DM.unloadNoMarshal);
           while (t.acc >= 1 && t.units > 0) {
@@ -708,11 +718,18 @@
       // el descanso no cuenta como hora trabajada
       const sortCrew = S.t >= S.plan.sortStart && S.sortDoneAt == null && !brk, pickCrew = S.t >= S.plan.pickStart && !S.over;
       const on = marshalsOn();
-      const active = { receive: sortCrew, induct: sortCrew, stow: sortCrew, pick: pickCrew, ps: sortCrew || (pickCrew && !brk), dock: on.dock, yard: on.yard };
+      const active = { receive: sortCrew, induct: sortCrew, stow: sortCrew, pick: pickCrew, ps: sortCrew || (pickCrew && !brk), dock: on.dock && !brk, yard: on.yard };
       for (const k of ["dock", "yard"]) if (on[k] && !S.staff[k]) S.noMarshal[k] += dt;
       // el dock marshall acaba cuando ha atracado y se ha descargado el último camión del plan
       if (S.dockDoneAt == null && S.t > S.plan.firstTruck && S.plan.trucks.every((x) => x.state === "docked") && !S.gate.length && !S.trucks.some((t) => t.units > 0)) S.dockDoneAt = S.t;
       for (const k in active) if (active[k]) { S.procMin[k] = (S.procMin[k] || 0) + S.staff[k] * dt; S.laborMin += S.staff[k] * dt; }
+      // quien está fichado y su proceso no tiene trabajo ahora: apoyo (rutas, paquetes perdidos, preparar el turno siguiente)
+      if (!S.over) for (const k of S.plan.teamProcs) if (!active[k] && clockedOn(k, S.t) && !brk) { S.supportMin += S.staff[k] * dt; S.laborMin += S.staff[k] * dt; }
+      // en la tarde, cuando ya se han descargado los camiones, el yard marshall de los muelles pasa al yard
+      if (SH.dockToYard && S.dockDoneAt != null && !S.dockMoved) {
+        S.dockMoved = true;
+        if (S.staff.dock) { S.staff.yard += S.staff.dock; S.staff.dock = 0; syncCrew(); log("Camiones descargados: el yard marshall de los muelles pasa al yard para las oleadas", "out"); }
+      }
       if (crew) crew.tick(active, dt);
       if (Math.floor(S.t / 10) !== Math.floor((S.t - dt) / 10)) {
         // vuelve poco a poco hacia el 97% (nadie rinde al 100% todo el turno) con algo de ruido
@@ -742,7 +759,7 @@
     // Cuándo hace falta cada marshal: el de dock mientras llegan y se descargan los camiones del plan,
     // el de yard desde un rato antes de la primera oleada hasta que sale la última furgoneta
     function marshalsOn() {
-      return { dock: S.t >= S.plan.sortStart && S.dockDoneAt == null, yard: S.t >= S.plan.firstWave - YM.before && !S.over };
+      return { dock: S.t >= S.plan.dockStart && S.dockDoneAt == null, yard: S.t >= S.plan.firstWave - YM.before && !S.over };
     }
 
     // Paquetes de una ruta que van de camino a su carro de pick
@@ -750,6 +767,10 @@
       for (const tr of S.transit) if (tr.dest === "cart" && tr.pkg.route === r.n) return true;
       return false;
     }
+
+    // Fichado: entre su entrada y teamEnd
+    const clockIn = (k) => (k === "dock" || k === "yard" ? S.plan.marshalsIn : S.plan.sortStart);
+    const clockedOn = (k, t) => S.plan.teamEnd != null && S.plan.teamProcs.includes(k) && t >= clockIn(k) && t < S.plan.teamEnd;
 
     // Descansos del equipo de noche
     const onBreak = (t) => S.plan.breaks.some((b) => t >= b.from && t < b.to);
@@ -1056,10 +1077,10 @@
       const span = (a, b) => workBetween(Math.max(a, S.t), b), s0 = S.plan.sortStart;
       const dockEnd = S.dockDoneAt != null || fc.done ? S.t : fc.lastUnload;
       const m = { receive: span(s0, sortEnd), induct: span(s0, sortEnd), stow: span(s0, sortEnd), ps: span(s0, end), pick: span(S.plan.pickStart, end),
-        dock: span(s0, dockEnd), yard: span(S.plan.firstWave - YM.before, end) };
-      // el equipo de sort de noche sigue fichado hasta su salida aunque acabe antes
-      const support = S.plan.nightEnd == null ? 0 : (staff.receive + staff.induct + staff.stow) * workBetween(Math.max(sortEnd, S.t), S.plan.nightEnd);
-      return (KEYS.reduce((s, k) => s + (staff[k] || 0) * m[k], 0) + support) / 60;
+        dock: span(S.plan.dockStart, dockEnd), yard: span(S.plan.firstWave - YM.before, end) };
+      // quien está fichado cuenta desde que entra hasta su salida, tenga trabajo o no
+      if (S.plan.teamEnd != null) for (const k of S.plan.teamProcs) m[k] = Math.max(m[k], span(clockIn(k), S.plan.teamEnd));
+      return KEYS.reduce((s, k) => s + (staff[k] || 0) * m[k], 0) / 60;
     }
 
     // Qué cambiaría un reparto ahora mismo, al instante: fin del sort, oleadas, cuello de botella,
@@ -1095,12 +1116,11 @@
       return out;
     }
 
-    // Minutos-persona del equipo de sort de noche desde que acaba el sort hasta que sale (nightEnd): siguen fichados
-    // haciendo rutas y buscando paquetes perdidos. Al acabar la partida se cuenta hasta su hora de salida.
+    // Minutos-persona de apoyo: los ya fichados más, al acabar la partida, lo que le queda al equipo hasta su salida
     function supportMin() {
-      if (S.sortDoneAt == null || S.plan.nightEnd == null) return 0;
-      const n = (S.staff.receive || 0) + (S.staff.induct || 0) + (S.staff.stow || 0);
-      return n * workBetween(S.sortDoneAt, S.over ? S.plan.nightEnd : Math.min(S.t, S.plan.nightEnd));
+      let n = S.supportMin;
+      if (S.over && S.plan.teamEnd != null) for (const k of S.plan.teamProcs) n += (S.staff[k] || 0) * workBetween(Math.max(S.endAt, clockIn(k)), S.plan.teamEnd);
+      return n;
     }
 
     // Métricas del turno
@@ -1119,10 +1139,10 @@
       });
       // marshals: no mueven paquetes, se mira si están cuando hacen falta y lo que tienen esperando
       const on = marshalsOn();
-      procs.push({ key: "dock", name: "Dock marshall", marshal: true, staff: S.staff.dock, needed: on.dock, queue: S.gate.length, done: S.totals.dock || 0 });
+      procs.push({ key: "dock", name: SH.dockToYard ? "Muelles (yard marshall)" : "Dock marshall", marshal: true, staff: S.staff.dock, needed: on.dock, queue: S.gate.length, done: S.totals.dock || 0 });
       procs.push({ key: "yard", name: "Yard marshall", marshal: true, staff: S.staff.yard, needed: on.yard, queue: S.vans.filter((v) => v.state === "arriving").length, done: S.totals.yard || 0 });
       const cycle = Object.entries(S.cyc).map(([k, [sum, n]]) => ({ key: k, min: n ? sum / n : null }));
-      const laborHours = (S.laborMin + supportMin()) / 60;
+      const laborHours = (S.laborMin + supportMin() - S.supportMin) / 60;
       return {
         quality: {
           missortRate: S.sorted ? S.issues.missort / S.sorted : 0, dpmo: S.received ? (defects / S.received) * 1e6 : 0,
