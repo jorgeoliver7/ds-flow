@@ -25,9 +25,12 @@
   // Equipos del turno: el de noche hace el sort, el de mañana el pick. La tarde lo hace todo con un equipo pequeño.
   // base: personas por proceso que hay normalmente; extra: gente formada que se puede llamar (horas extra, otro turno)
   // marshals: el dock marshall es del equipo de noche (recibe los camiones) y el yard marshall del de mañana (oleadas)
+  // La tarde: 4 asociados, un supervisor (resuelve las incidencias en problem solve), 2 yard marshall que también
+  // reciben los camiones, y un manager que no está en ningún proceso. De refuerzo, a veces 2 asociados y otro supervisor.
   function teams(L, evening) {
     const b = { receive: L.receive.staff, induct: L.induct.staff, stow: L.stow.staff, ps: L.problem.staff };
-    if (evening) return [{ team: "tarde", base: { receive: 1, induct: 1, stow: 3, pick: 3, ps: 1 }, extra: { stow: 1, pick: 1 }, marshals: { dock: 1, yard: 1 }, marshalExtra: {} }];
+    if (evening) return [{ team: "tarde", base: { receive: 1, induct: 1, stow: 1, pick: 1, ps: 1 }, extra: { stow: 1, pick: 1, ps: 1 }, marshals: { yard: 2 }, marshalExtra: {},
+      roles: { ps: "Supervisor" }, leads: ["Manager"] }];
     return [
       { team: "noche", base: b, extra: { receive: 1, induct: 2, stow: 5, ps: 1 }, marshals: { dock: 1 }, marshalExtra: { dock: 1 } },
       { team: "mañana", base: { pick: L.pick.staff }, extra: { pick: 6 }, marshals: { yard: 1 }, marshalExtra: { yard: 1 } },
@@ -53,7 +56,8 @@
           const skills = [k];
           for (const p of others) if (rand() < 0.35) skills.push(p);
           const n = names.splice(Math.floor(rand() * names.length), 1)[0] || "Persona";
-          out.push({ id: id(), name: `${n} ${String.fromCharCode(65 + Math.floor(rand() * 26))}.`, team: t.team, primary: k, skills, tenure, speed, care, bench: group === "extra" });
+          out.push({ id: id(), name: `${n} ${String.fromCharCode(65 + Math.floor(rand() * 26))}.`, team: t.team, primary: k, skills, tenure, speed, care, bench: group === "extra",
+            role: (t.roles && t.roles[k]) || null });
         }
       }
     }
@@ -66,15 +70,23 @@
           const tenure = 18 + Math.round(rm() * 42);
           const n = names.splice(Math.floor(rm() * names.length), 1)[0] || "Persona";
           let x; do x = "E-" + String(1000 + Math.floor(rm() * 9000)); while (used.has(x)); used.add(x);
-          out.push({ id: x, name: `${n} ${String.fromCharCode(65 + Math.floor(rm() * 26))}.`, team: t.team, primary: k, skills: [k], tenure,
+          // los yard marshall de la tarde también reciben los camiones en los muelles
+          out.push({ id: x, name: `${n} ${String.fromCharCode(65 + Math.floor(rm() * 26))}.`, team: t.team, primary: k, skills: evening && k === "yard" ? [k, "dock"] : [k], tenure,
             speed: 0.95 + rm() * 0.1, care: 0.6 + rm() * 0.4, bench: group === "extra" });
         }
       }
       for (const k of MARSHALS) if (t.marshals[k]) for (const e of out) if (e.team === t.team && !MARSHALS.includes(e.primary) && e.tenure >= 12 && rm() < 0.2) e.skills.push(k);
     }
+    // mandos sin proceso (el manager): no mueven paquetes ni cuentan en las horas-persona
+    for (const t of teams(L, evening)) for (const r of t.leads || []) {
+      let n; do n = names.splice(Math.floor(rm() * names.length), 1)[0] || "Persona"; while (n === "Jorge");
+      let x; do x = "E-" + String(1000 + Math.floor(rm() * 9000)); while (used.has(x)); used.add(x);
+      out.push({ id: x, name: `${n} ${String.fromCharCode(65 + Math.floor(rm() * 26))}.`, team: t.team, primary: null, skills: [], tenure: 36 + Math.round(rm() * 48),
+        speed: 1, care: 1, bench: false, role: r, lead: true });
+    }
     // la plantilla base de cada proceso rinde de media al 100%: así el equipo habitual da el ritmo de layout.js
     for (const k of PROCS) {
-      const g = out.filter((e) => e.primary === k && !e.bench);
+      const g = out.filter((e) => e.primary === k && !e.bench && !e.lead);
       const m = g.reduce((s, e) => s + e.speed, 0) / (g.length || 1);
       for (const e of g) e.speed = +(e.speed / m).toFixed(3);
     }
@@ -109,7 +121,7 @@
     // quién entra en un proceso: primero quien acaba de salir de otro y sabe hacerlo, luego su equipo habitual,
     // después los formados y, si no queda nadie, alguien sin formación o un temporal de ETT
     function candidate(k, released) {
-      const free = people.filter((e) => !e.proc && e.team === teamOf(k));
+      const free = people.filter((e) => !e.proc && !e.lead && e.team === teamOf(k));
       const score = (e) => (released.includes(e) && e.skills.includes(k) ? 0 : 10) + (e.primary === k ? 0 : e.skills.includes(k) ? 3 : 6) + (e.bench ? 1 : 0);
       free.sort((a, b) => score(a) - score(b) || people.indexOf(a) - people.indexOf(b));
       if (free.length) return free[0];
@@ -236,7 +248,7 @@
         const stowed = e.units.stow || 0;
         const missortRate = stowed >= 50 ? e.missorts / stowed : null;
         return {
-          id: e.id, name: e.name, team: e.team, primary: e.primary, skills: e.skills, tenure: e.tenure, temp: !!e.temp, bench: e.bench,
+          id: e.id, name: e.name, team: e.team, primary: e.primary, skills: e.skills, tenure: e.tenure, temp: !!e.temp, bench: e.bench, role: e.role || null, lead: !!e.lead,
           proc: e.proc, since: e.since, hours, units, ratio, vsTeam, missorts: e.missorts, missortRate, procs, moves: e.moves.slice(),
           // avisos para el responsable: por debajo del 90% de su equipo, o missort claramente por encima del 0,5% objetivo con volumen suficiente
           flag: missortRate != null && stowed >= 500 && missortRate > 0.006 ? "quality" : vsTeam != null && vsTeam < 0.9 ? "low" : vsTeam != null && vsTeam >= 1.08 ? "top" : null,

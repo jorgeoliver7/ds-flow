@@ -135,7 +135,9 @@
     const badges = {};
     function marshalBadge(key, x, y, right) {
       const n = S.staff[key], on = E.marshalsOn()[key], miss = on && !n;
-      const label = miss ? `Sin ${key} marshall` : `${n > 1 ? n + " × " : ""}${key === "dock" ? "Dock" : "Yard"} marshall`;
+      // en la tarde los camiones los recibe uno de los yard marshall
+      const name = key === "dock" ? (E.SH.dockToYard ? "Yard marshall · muelles" : "Dock marshall") : "Yard marshall";
+      const label = miss ? `Sin ${key} marshall` : `${n > 1 ? n + " × " : ""}${name}`;
       const col = miss ? C.bad : on ? C.ok : C.muted;
       ctx.font = SANS(600, 10);
       const w = ctx.measureText(label).width + 30, h = 20;

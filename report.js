@@ -35,7 +35,7 @@
       ["Fin del sort", sortEnd == null ? "Sin terminar" : clock(sortEnd), sortEnd == null ? `corte ${clock(cutoff)}` : sortEnd <= cutoff ? `${fmt(cutoff - sortEnd)} antes del corte` : `${fmt(sortEnd - cutoff)} después del corte`, sortEnd != null && sortEnd <= cutoff ? "ok" : "bad"],
       ["Rutas a tiempo", `${m.routesOnTime}/${m.routesTotal}`, m.routesLate ? `${m.routesLate} tarde` : "todas", m.routesLate ? "bad" : "ok"],
       ["Rollover", String(m.rollover), "paquetes para mañana", m.rollover ? "bad" : "ok"],
-      ["Horas trabajadas", dec(m.laborHours), m.supportHours >= 0.1 ? `horas-persona · ${dec(m.supportHours)} de apoyo tras el sort` : "horas-persona"],
+      ["Horas trabajadas", dec(m.laborHours), m.supportHours >= 0.1 ? `horas-persona · ${dec(m.supportHours)} de apoyo (fichados sin trabajo en su proceso)` : "horas-persona"],
       ["Paquetes / hora trabajada", m.pph == null ? "—" : String(Math.round(m.pph)), "clasificados"],
       ...(hourly ? [
         ["Coste del turno", n0(m.laborHours * hourly) + " €", `${dec(m.laborHours)} h a ${String(hourly).replace(".", ",")} €/h`],
