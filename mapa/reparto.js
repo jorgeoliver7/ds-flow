@@ -152,38 +152,40 @@
     return zp.tipo.servicio * (1 + P.lluviaParada * lluvia) + drive;
   }
 
-  // Planificación por barrido: se ordenan las zonas por ángulo desde la estación y
-  // se cortan en rutas que caben en la jornada planificada, contando la ida y la
-  // vuelta. Con n rutas, busca la carga por ruta que las reparte todas.
+  // Planificación por barrido: comarca a comarca, se ordenan las zonas por ángulo
+  // desde la estación y se cortan en rutas que caben en la jornada planificada,
+  // contando la ida, los saltos entre zonas y la vuelta desde la última. Con n rutas,
+  // busca la jornada planificada que las reparte todas.
   function planificar(prep, familia, paquetesZona, n, accesoNormal) {
-    const zs = prep.zonas.filter((zp) => zp.z.rutas === familia && paquetesZona[zp.i] > 0)
-      .sort((a, b) => a.angulo - b.angulo || a.z.acceso.min - b.z.acceso.min);
+    const zs = prep.zonas.filter((zp) => zp.z.rutas === familia && paquetesZona[zp.i] > 0);
     if (!zs.length || n <= 0) return [];
+    const anguloComarca = new Map();
+    zs.forEach((zp) => anguloComarca.set(zp.z.comarca, Math.min(anguloComarca.get(zp.z.comarca) ?? Infinity, zp.angulo)));
+    zs.sort((a, b) => anguloComarca.get(a.z.comarca) - anguloComarca.get(b.z.comarca) || a.angulo - b.angulo || a.z.acceso.min - b.z.acceso.min);
     const trabajo = zs.map((zp) => {
       const paradas = paquetesZona[zp.i] / zp.tipo.pps;
       return paradas * minutosPorParada(zp, zp.z.area_km2, paradas, 0);
     });
+    const acceso = zs.map((zp) => accesoNormal(zp));
+    const salto = (a, b) => ((km(a.z.centro, b.z.centro) * P.rodeoSalto) / P.saltoKmh) * 60;
     const corta = (jornada) => {
       const rutas = [];
       let actual = null;
       zs.forEach((zp, k) => {
         let resto = 1;
         while (resto > 1e-9) {
-          if (!actual) {
-            const ida = accesoNormal(zp);
-            actual = { partes: [], libre: Math.max(30, jornada - 2 * ida) };
-            rutas.push(actual);
+          if (!actual) { actual = { partes: [], t: acceso[k], ultima: null }; rutas.push(actual); }
+          const hop = actual.ultima ? salto(actual.ultima, zp) : 0;
+          const cabe = (jornada - acceso[k] - actual.t - hop) / trabajo[k];
+          // una ruta nueva siempre se lleva algo, aunque la zona quede muy lejos
+          const frac = actual.partes.length ? Math.min(resto, cabe) : Math.min(resto, Math.max(cabe, 0.05));
+          if (frac > 0.02 || frac >= resto) {
+            actual.partes.push({ zp, frac, desde: 1 - resto });
+            actual.t += hop + trabajo[k] * frac;
+            actual.ultima = zp;
+            resto -= frac;
           }
-          const necesita = trabajo[k] * resto;
-          if (necesita <= actual.libre + 1e-9) {
-            actual.partes.push({ zp, frac: resto, desde: 1 - resto });
-            actual.libre -= necesita;
-            resto = 0;
-          } else {
-            const frac = actual.libre / trabajo[k];
-            if (frac > 0.02) { actual.partes.push({ zp, frac, desde: 1 - resto }); resto -= frac; }
-            actual = null;
-          }
+          if (resto > 1e-9) actual = null;
         }
       });
       return rutas;
@@ -337,13 +339,16 @@
   }
 
   // Rasgos de una zona para el modelo: lo que no cambia con el día
-  const RASGOS_ZONA = ["acceso_min", "acceso_km", "log_densidad", "log_area", "poblacion_k", "riesgo", "lluvia_rel", "tramos_inundables", "eqx1"];
+  // (el ángulo desde la estación es el orden del barrido con el que se planifican las rutas)
+  const RASGOS_ZONA = ["acceso_min", "acceso_km", "log_densidad", "log_area", "poblacion_k", "riesgo", "lluvia_rel", "tramos_inundables", "eqx1", "angulo", "lon", "lat"];
   function rasgosZona(base, z) {
     const inund = new Set(base.carreteras.filter((t) => t.inundable).map((t) => t.id));
+    const e = base.estacion;
     return [
       z.acceso.min, z.acceso.km, Math.log10(Math.max(z.densidad, 1)), Math.log10(Math.max(z.area_km2, 0.05)),
       z.poblacion / 1000, z.riesgo_inundacion, z.lluvia_relativa,
       z.acceso.tramos.filter((t) => inund.has(t)).length, z.rutas === "EQX1" ? 1 : 0,
+      Math.atan2(z.centro[1] - e.lat, (z.centro[0] - e.lon) * Math.cos((e.lat * Math.PI) / 180)), z.centro[0], z.centro[1],
     ];
   }
   const RASGOS_DIA = ["volumen", "lluvia", "inundacion", "huelga", "refuerzo", "retraso"];
