@@ -1,7 +1,8 @@
 """Construye la base geográfica del mapa de reparto de Cádiz.
 
 Une los códigos postales de la provincia con la población del INE, las dos
-estaciones ficticias (DQX1 y EQX1) y una red de carreteras esquemática, y
+estación ficticia con sus dos familias de rutas (DQX1 y EQX1) y una red de
+carreteras esquemática, y
 escribe mapa/data/cadiz-base.json, mapa/data/RESUMEN.md y docs/mapa-base.png.
 
     python3 -m pip install shapely matplotlib
@@ -37,11 +38,13 @@ SOURCES = {
     "countries": "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_10m_admin_0_countries.geojson",
 }
 
-# Estaciones ficticias: ubicaciones plausibles en polígonos junto a las autovías,
-# no las de ninguna empresa.
-ESTACIONES = {
-    "DQX1": {"nombre": "DQX1 · Bahía y Jerez", "lat": 36.655, "lon": -6.105},
-    "EQX1": {"nombre": "EQX1 · Campo de Gibraltar y Sierra", "lat": 36.180, "lon": -5.440},
+# Una sola estación (la de DS Flow) que reparte dos familias de rutas:
+# DQX1 (Bahía, Jerez, Costa Noroeste y La Janda) y EQX1 (Campo de Gibraltar y
+# Sierra). Ubicación ficticia en un polígono junto a la A-4.
+ESTACION = {"id": "Estación", "nombre": "Estación DS Flow", "lat": 36.655, "lon": -6.105}
+RUTAS = {
+    "DQX1": "Bahía de Cádiz, Jerez, Costa Noroeste y La Janda",
+    "EQX1": "Campo de Gibraltar y Sierra de Cádiz",
 }
 
 # Pueblos de fuera de la provincia por los que pasa la ruta más corta a la Sierra.
@@ -51,7 +54,7 @@ BBOX = box(-6.55, 35.85, -5.0, 37.1)
 
 # Red esquemática: rodeo frente a la línea recta y velocidad media de una furgoneta.
 VIAS = {
-    "autovia": {"rodeo": 1.15, "kmh": 90},
+    "autovia": {"rodeo": 1.15, "kmh": 100},
     "nacional": {"rodeo": 1.25, "kmh": 70},
     "comarcal": {"rodeo": 1.30, "kmh": 60},
     "sierra": {"rodeo": 1.60, "kmh": 45},
@@ -189,8 +192,7 @@ def construir_zonas(municipios, atlas):
 def red_carreteras(municipios):
     nodos = {m["municipio"]: (float(m["lon"]), float(m["lat"])) for m in municipios.values()}
     nodos.update(NODOS_DE_PASO)
-    for codigo, e in ESTACIONES.items():
-        nodos[codigo] = (e["lon"], e["lat"])
+    nodos[ESTACION["id"]] = (ESTACION["lon"], ESTACION["lat"])
     tramos = []
     vecinos = defaultdict(list)
     for t in leer_csv("carreteras.csv"):
@@ -264,7 +266,7 @@ def main():
     atlas = topo_a_shapes(leer_atlas(), "municipalities")
     zonas = construir_zonas(municipios, atlas)
     nodos, tramos, vecinos = red_carreteras(municipios)
-    rutas = {e: dijkstra(e, vecinos) for e in ESTACIONES}
+    desde_estacion = dijkstra(ESTACION["id"], vecinos)
 
     salida_zonas = []
     for z in sorted(zonas, key=lambda z: (z["ine"], z["cp"])):
@@ -274,10 +276,8 @@ def main():
         local_km = km(pueblo, (centro.x, centro.y)) * ULTIMA_MILLA["rodeo"]
         urbanos = min(local_km, ULTIMA_MILLA["km_urbanos"])
         local_min = (urbanos / ULTIMA_MILLA["kmh_urbano"] + (local_km - urbanos) / ULTIMA_MILLA["kmh_local"]) * 60
-        acceso = {}
-        for e in ESTACIONES:
-            t, d, camino = rutas[e][m["municipio"]]
-            acceso[e] = {"km": round(d + local_km, 1), "min": round(t + local_min), "tramos": camino}
+        t, d, camino = desde_estacion[m["municipio"]]
+        acceso = {"km": round(d + local_km, 1), "min": round(t + local_min), "tramos": camino}
         densidad = z["poblacion"] / max(z["area_km2"], 0.01)
         salida_zonas.append({
             "id": f'{z["cp"]}-{z["ine"]}',
@@ -285,7 +285,7 @@ def main():
             "ine": z["ine"],
             "municipio": m["municipio"],
             "comarca": m["comarca"],
-            "estacion": m["estacion"],
+            "rutas": m["rutas"],
             "poblacion": z["poblacion"],
             "area_km2": round(z["area_km2"], 2),
             "densidad": round(densidad),
@@ -300,7 +300,7 @@ def main():
     provincia = unary_union([v["geom"] for k, v in atlas.items() if k.startswith("11") and len(k) == 5])
     base = {
         "meta": {
-            "descripcion": "Base geográfica del mapa de reparto de Cádiz (DS Flow). Población real, estaciones y red de carreteras esquemáticas.",
+            "descripcion": "Base geográfica del mapa de reparto de Cádiz (DS Flow). Población real; estación y red de carreteras esquemáticas.",
             "fuentes": {
                 "codigos_postales": SOURCES["cp"],
                 "poblacion": "INE, Censo de Población 2021, por municipio",
@@ -309,13 +309,14 @@ def main():
             },
             "bbox": list(BBOX.bounds),
         },
-        "estaciones": [{"id": k, **v} for k, v in ESTACIONES.items()],
+        "estacion": ESTACION,
+        "rutas": [{"id": k, "zona": v} for k, v in RUTAS.items()],
         "municipios": [
             {
                 "ine": m["ine"],
                 "nombre": m["municipio"],
                 "comarca": m["comarca"],
-                "estacion": m["estacion"],
+                "rutas": m["rutas"],
                 "poblacion": int(m["poblacion_2021"]),
                 "pueblo": [float(m["lon"]), float(m["lat"])],
             }
@@ -347,43 +348,44 @@ def resumen(base):
         "",
         "Generado con `python3 mapa/tools/build_data.py`. Lo que sigue sale de [`cadiz-base.json`](cadiz-base.json).",
         "",
-        "## Por estación",
+        "Una sola estación reparte las dos familias de rutas. Los minutos son lo que tarda una furgoneta en llegar desde la estación a cada zona, ponderados por población.",
         "",
-        "| Estación | Municipios | Zonas | Población | Rurales | Población en riesgo alto de inundación | Minutos medios a la zona | Zona más lejana |",
+        "## Por familia de rutas",
+        "",
+        "| Rutas | Municipios | Zonas | Población | Rurales | Población en riesgo alto de inundación | Minutos medios hasta la zona | Zona más lejana |",
         "| --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |",
     ]
-    for e in ESTACIONES:
-        zs = [z for z in zonas if z["estacion"] == e]
+    for r in RUTAS:
+        zs = [z for z in zonas if z["rutas"] == r]
         pob = sum(z["poblacion"] for z in zs)
         riesgo = sum(z["poblacion"] for z in zs if z["riesgo_inundacion"] == 3)
-        media = sum(z["acceso"][e]["min"] * z["poblacion"] for z in zs) / pob
-        lejana = max(zs, key=lambda z: z["acceso"][e]["min"])
+        media = sum(z["acceso"]["min"] * z["poblacion"] for z in zs) / pob
+        lejana = max(zs, key=lambda z: z["acceso"]["min"])
         lineas.append(
-            f'| {e} | {len({z["ine"] for z in zs})} | {len(zs)} | {miles(pob)} | {sum(z["clase"] == "rural" for z in zs)} '
-            f'| {miles(riesgo)} ({riesgo / pob:.0%}) | {media:.0f} | {lejana["municipio"]} ({lejana["cp"]}), {lejana["acceso"][e]["min"]} min |'
+            f'| {r} | {len({z["ine"] for z in zs})} | {len(zs)} | {miles(pob)} | {sum(z["clase"] == "rural" for z in zs)} '
+            f'| {miles(riesgo)} ({riesgo / pob:.0%}) | {media:.0f} | {lejana["municipio"]} ({lejana["cp"]}), {lejana["acceso"]["min"]} min |'
         )
 
-    lineas += ["", "## Por comarca", "", "| Comarca | Estación | Población | Minutos medios desde su estación | Minutos medios desde la otra |", "| --- | --- | ---: | ---: | ---: |"]
+    lineas += ["", "## Por comarca", "", "| Comarca | Rutas | Población | Km medios desde la estación | Minutos medios desde la estación |", "| --- | --- | ---: | ---: | ---: |"]
     comarcas = defaultdict(list)
     for z in zonas:
-        comarcas[(z["comarca"], z["estacion"])].append(z)
-    for (comarca, e), zs in sorted(comarcas.items(), key=lambda kv: -sum(z["poblacion"] for z in kv[1])):
-        otra = "EQX1" if e == "DQX1" else "DQX1"
+        comarcas[(z["comarca"], z["rutas"])].append(z)
+    for (comarca, r), zs in sorted(comarcas.items(), key=lambda kv: -sum(z["poblacion"] for z in kv[1])):
         pob = sum(z["poblacion"] for z in zs)
-        propia = sum(z["acceso"][e]["min"] * z["poblacion"] for z in zs) / pob
-        ajena = sum(z["acceso"][otra]["min"] * z["poblacion"] for z in zs) / pob
-        lineas.append(f"| {comarca} | {e} | {miles(pob)} | {propia:.0f} | {ajena:.0f} |")
+        km_medios = sum(z["acceso"]["km"] * z["poblacion"] for z in zs) / pob
+        minutos = sum(z["acceso"]["min"] * z["poblacion"] for z in zs) / pob
+        lineas.append(f"| {comarca} | {r} | {miles(pob)} | {km_medios:.0f} | {minutos:.0f} |")
 
     uso = defaultdict(int)
     for z in zonas:
-        for t in z["acceso"][z["estacion"]]["tramos"]:
+        for t in z["acceso"]["tramos"]:
             uso[t] += z["poblacion"]
     criticos = sorted((t for t in uso if tramos[t]["inundable"]), key=lambda t: -uso[t])[:8]
     lineas += [
         "",
         "## Tramos inundables más críticos",
         "",
-        "Población que depende de cada tramo para recibir sus paquetes desde su estación.",
+        "Población que depende de cada tramo para recibir sus paquetes desde la estación.",
         "",
         "| Tramo | Vía | Motivo | Población que pasa por él |",
         "| --- | --- | --- | ---: |",
@@ -398,7 +400,7 @@ def resumen(base):
         "",
         f"- **Zonas**: cada código postal dentro de su municipio ({len(zonas)} zonas). San Martín del Tesorillo se separa de Jimena con el contorno del IGN, porque el dataset de códigos postales es anterior a 2018.",
         "- **Población**: la del municipio en el Censo 2021 del INE, repartida entre sus códigos postales con más peso a los pequeños (cascos urbanos) que a los grandes (campo). Es una estimación: el INE no publica población por código postal.",
-        "- **Estaciones**: DQX1 y EQX1 son ficticias, con ubicaciones plausibles junto a las autovías. Las comarcas de Costa Noroeste y La Janda se asignan a DQX1 por cercanía.",
+        "- **Estación y rutas**: una sola estación ficticia junto a la A-4, entre Jerez y El Puerto, que reparte dos familias de rutas: DQX1 (Bahía, Jerez, Costa Noroeste y La Janda) y EQX1 (Campo de Gibraltar y Sierra). Los nombres son inventados.",
         "- **Carreteras**: red esquemática entre pueblos (`carreteras.csv`), con rodeo y velocidad media por tipo de vía. Los tiempos son de una furgoneta sin tráfico ni paradas.",
         "- **Riesgo de inundación y lluvia** (`municipios.csv`): valores ilustrativos inspirados en ríos y episodios conocidos (Guadalete, Iro, Barbate, La Janda, Guadiaro, Palmones, Grazalema). No es cartografía oficial.",
         "",
@@ -429,13 +431,13 @@ def preview(base):
     colores = {"DQX1": matplotlib.colormaps["Oranges"], "EQX1": matplotlib.colormaps["Blues"]}
     for z in base["zonas"]:
         nivel = min(1.0, math.log10(max(z["densidad"], 1)) / 4)
-        dibujar(z["geometria"], facecolor=colores[z["estacion"]](0.25 + 0.7 * nivel), edgecolor="#0e1116", linewidth=0.3)
+        dibujar(z["geometria"], facecolor=colores[z["rutas"]](0.25 + 0.7 * nivel), edgecolor="#0e1116", linewidth=0.3)
     for t in base["carreteras"]:
         (x1, y1), (x2, y2) = t["coords"]
         ax.plot([x1, x2], [y1, y2], color="#e5484d" if t["inundable"] else "#d8dee9", linewidth=1.1 if t["tipo"] == "autovia" else 0.6, alpha=0.8, zorder=3)
-    for e in base["estaciones"]:
-        ax.scatter([e["lon"]], [e["lat"]], s=140, marker="s", color="white", edgecolor="black", zorder=5)
-        ax.annotate(e["id"], (e["lon"], e["lat"]), xytext=(8, -4), textcoords="offset points", color="white", fontsize=11, weight="bold", zorder=6)
+    e = base["estacion"]
+    ax.scatter([e["lon"]], [e["lat"]], s=140, marker="s", color="white", edgecolor="black", zorder=5)
+    ax.annotate("Estación", (e["lon"], e["lat"]), xytext=(8, -4), textcoords="offset points", color="white", fontsize=11, weight="bold", zorder=6)
     for m in base["municipios"]:
         if m["poblacion"] > 40000:
             ax.annotate(m["nombre"], m["pueblo"], xytext=(4, 4), textcoords="offset points", color="#c9d1d9", fontsize=7, zorder=6)
@@ -444,7 +446,7 @@ def preview(base):
     ax.set_ylim(35.88, 37.05)
     ax.set_aspect(1 / math.cos(math.radians(36.5)))
     ax.axis("off")
-    ax.set_title("Cádiz · zonas de reparto por densidad (naranja DQX1, azul EQX1) · tramos inundables en rojo", color="#c9d1d9", fontsize=10)
+    ax.set_title("Cádiz · zonas de reparto por densidad (naranja rutas DQX1, azul rutas EQX1) · tramos inundables en rojo", color="#c9d1d9", fontsize=10)
     os.makedirs(os.path.dirname(OUT_PNG), exist_ok=True)
     fig.savefig(OUT_PNG, bbox_inches="tight", facecolor=fig.get_facecolor())
     print("preview:", OUT_PNG)
