@@ -273,10 +273,12 @@
         const limite = oleada + P.jornada;
         const ritmo = ruido(rand, 0.08);  // el día de este conductor
         let t = salida, kmRuta = 0, pos = null, ultima = null;
-        const res = { id: `${fam}-${String(ruta.n).padStart(3, "0")}`, familia: fam, salida, zonas: [], camino: [], paquetes: 0, entregados: 0, fallidos: 0, rts: 0 };
+        // partes: el momento en que la furgoneta trabaja cada zona, para animar el día en el mapa
+        const res = { id: `${fam}-${String(ruta.n).padStart(3, "0")}`, familia: fam, salida, zonas: [], partes: [], camino: [], caminoVuelta: [], paquetes: 0, entregados: 0, fallidos: 0, rts: 0 };
         const primera = ruta.partes[0].zp;
         const ida = hoy.get(primera.z.municipio);
         if (ida) { t += ida.min + localMin(primera, lluviaZona(primera)); kmRuta += ida.km + primera.localKm; res.camino = ida.tramos; }
+        res.llegada = t;
         for (const { zp, frac, desde } of ruta.partes) {
           const zr = zonas[zp.i];
           // por fracción acumulada, para que las partes de una zona sumen justo sus paquetes
@@ -299,6 +301,7 @@
           const intentados = paradas > 0 ? Math.round((resto * hechas) / paradas) : 0;
           const pFallo = clamp((zp.tipo.fallo + P.lluviaFallo * lluvia + 0.03 * C.inundacion * (zp.z.riesgo_inundacion / 3)) * ruido(rand, 0.2), 0, 0.5);
           const fallidos = Math.round(intentados * pFallo);
+          res.partes.push({ zona: zp.z.id, inicio: t, fin: t + hechas * porParada, entregados: intentados - fallidos, fallidos, rts: resto - intentados + rtsInund });
           t += hechas * porParada;
           kmRuta += 0.75 * Math.sqrt(Math.max(hechas, 0) * area) * 1.3;
           if (hechas > 0) ultima = t;
@@ -309,7 +312,8 @@
         }
         const ultimaZona = ruta.partes[ruta.partes.length - 1].zp;
         const vuelta = hoy.get(ultimaZona.z.municipio);
-        if (vuelta && ida) { t += vuelta.min + localMin(ultimaZona, lluviaZona(ultimaZona)); kmRuta += vuelta.km + ultimaZona.localKm; }
+        res.inicioVuelta = t;
+        if (vuelta && ida) { t += vuelta.min + localMin(ultimaZona, lluviaZona(ultimaZona)); kmRuta += vuelta.km + ultimaZona.localKm; res.caminoVuelta = vuelta.tramos; }
         res.vuelta = t; res.ultima = ultima; res.km = +kmRuta.toFixed(1);
         res.horas = (t - salida) / 60;
         res.sobrecargada = res.rts > 0.02 * res.paquetes;

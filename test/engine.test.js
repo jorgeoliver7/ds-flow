@@ -148,6 +148,14 @@ test("cada escenario lleva a un informe distinto y coherente", () => {
   assert.equal(DSEngine.clock({ shiftStart: 14 * 60 }, 0), "14:00");
   assert.equal(out.pm.r.kpis.find((k) => k[0] === "Rutas a tiempo")[1], "8/8");
   assert.ok(out.pm.S.sortDoneAt <= out.pm.S.plan.cutoff);
+  // enlace al mapa de Cádiz: lleva los paquetes que salieron, el retraso medio de las oleadas y el rollover
+  const u = new URL(R.mapaUrl(out.normal.r), "https://x/");
+  assert.equal(u.pathname, "/mapa/");
+  assert.equal(u.searchParams.get("desde"), "dsflow");
+  assert.equal(u.searchParams.get("turno"), SC.list[0].name);
+  assert.equal(+u.searchParams.get("paquetes"), out.normal.S.dispatched);
+  assert.equal(+u.searchParams.get("retraso"), 0);
+  assert.ok(out.personal.r.reparto.retraso > 0, "falta de personal: las oleadas salen tarde");
   const signature = (x) => JSON.stringify([x.r.kpis, x.r.bad]);
   assert.equal(new Set(Object.values(out).map(signature)).size, SC.list.length);
 });

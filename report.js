@@ -114,7 +114,20 @@
     for (const pt of S.plan.trucks) if (pt.eta !== pt.at) bad.push(`El camión ${pt.id} llegó ${pt.delay} min tarde (${clock(pt.eta)} en vez de ${clock(pt.at)}).`);
 
     const cycle = m.cycle.map((c) => ({ name: CYCLE[c.key], min: c.min }));
-    return { scenario: sc ? sc.name : "Turno", seed: sc ? sc.seed : null, over: S.over, now: clock(S.t), kpis, procs, waves, cycle, quality: q, good, bad, clock, people };
+    // lo que el mapa de Cádiz necesita para seguir el día en la calle: paquetes que salieron y retraso medio de las oleadas
+    const salidas = waves.filter((w) => w.depart != null);
+    const reparto = {
+      paquetes: S.over ? S.dispatched : S.plan.volume,
+      retraso: salidas.length ? Math.round(salidas.reduce((a, w) => a + Math.max(0, w.depart - w.deadline), 0) / salidas.length) : 0,
+      rollover: m.rollover,
+    };
+    return { scenario: sc ? sc.name : "Turno", seed: sc ? sc.seed : null, over: S.over, now: clock(S.t), kpis, procs, waves, cycle, quality: q, good, bad, clock, people, reparto };
+  }
+
+  // Enlace al mapa de reparto en Cádiz con el resultado del turno
+  function mapaUrl(r, base = "mapa/") {
+    const q = new URLSearchParams({ desde: "dsflow", turno: r.scenario, paquetes: r.reparto.paquetes, retraso: r.reparto.retraso, rollover: r.reparto.rollover });
+    return base + "?" + q.toString();
   }
 
   // CSV para Excel en español: separador ";" y coma decimal
@@ -153,7 +166,7 @@
       </div>`;
   }
 
-  const api = { build, csv, html };
+  const api = { build, csv, html, mapaUrl };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.DSReport = api;
 })(typeof window !== "undefined" ? window : globalThis);

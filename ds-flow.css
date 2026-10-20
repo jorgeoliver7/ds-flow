@@ -205,6 +205,7 @@ button, select, input { font: inherit; color: inherit; }
   transition: border-color .15s, transform .1s;
 }
 .ds-btn:hover { border-color: var(--ds-accent); }
+a.ds-btn { display: inline-block; color: inherit; text-decoration: none; }
 .ds-btn:active { transform: translateY(1px); }
 .ds-btn--in { border-color: color-mix(in oklab, var(--ds-raw) 55%, transparent); }
 .ds-btn--out { border-color: color-mix(in oklab, var(--ds-accent) 60%, transparent); color: var(--ds-accent); }

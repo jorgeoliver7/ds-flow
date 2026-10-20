@@ -71,6 +71,7 @@
   function openReport() {
     report = DSReport.build(E, scenario(), { hourly: hourly() });
     $("#ds-report-body").innerHTML = DSReport.html(report);
+    $("#ds-report-map").href = DSReport.mapaUrl(report);
     if (!reportEl.open) reportEl.showModal();
   }
   $("#ds-report-btn").addEventListener("click", openReport);

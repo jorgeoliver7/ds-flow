@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DS Flow · Reparto en Cádiz</title>
+  <meta name="description" content="Mapa de calor del reparto de última milla en la provincia de Cádiz: lluvia, flash flood, huelga y volumen, con un modelo de IA que predice la entrega zona a zona y explica qué pesa más. Por Jorge Acedo.">
+  <meta name="author" content="Jorge Acedo">
+  <link rel="icon" type="image/svg+xml" href="../favicon.svg">
+  <link rel="canonical" href="https://jorgeoliver7.github.io/ds-flow/mapa/">
+  <meta property="og:title" content="DS Flow · Reparto en Cádiz">
+  <meta property="og:description" content="Lo que pasa después de la estación: 120 rutas por la provincia de Cádiz, con lluvia, flash flood o huelga, y una IA que predice la entrega zona a zona.">
+  <meta property="og:url" content="https://jorgeoliver7.github.io/ds-flow/mapa/">
+  <meta property="og:type" content="website">
+  <script>
+    (function () {
+      var t = "dark"; try { t = localStorage.getItem("a-theme") || "dark"; } catch (e) {}
+      document.documentElement.dataset.theme = t === "light" ? "light" : "dark";
+    })();
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=DM+Mono:wght@400;500&family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;1,9..144,400&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../ds-flow.css?v=2026-10-20.1">
+  <link rel="stylesheet" href="mapa.css?v=2026-10-20.1">
+</head>
+<body>
+  <header class="ds-top">
+    <a class="ds-back" href="../">← DS Flow</a>
+    <div class="ds-title">
+      <h1>DS Flow <em>· el reparto en Cádiz</em></h1>
+      <p>Lo que pasa después de la estación: 120 rutas por la provincia, con lluvia, flash flood o huelga, y una IA que predice la entrega zona a zona.</p>
+    </div>
+    <div class="ds-actions">
+      <a class="ds-btn ds-btn--ghost mp-hide-sm" href="https://jorgeoliver7.github.io/Portfolio-Website/">Portfolio</a>
+      <button class="ds-icon" id="ds-theme" aria-label="Cambiar tema">☀</button>
+    </div>
+  </header>
+
+  <div class="mp-from" id="mp-from" hidden></div>
+
+  <main class="ds-main mp-main">
+    <section class="ds-stage" aria-label="Mapa de la provincia de Cádiz">
+      <div class="ds-controls">
+        <div class="mp-seg" role="tablist" aria-label="Modo">
+          <button role="tab" data-mode="ia" aria-selected="true">Previsión IA</button>
+          <button role="tab" data-mode="dia" aria-selected="false">Jugar el día</button>
+        </div>
+        <label class="ds-field">Ver
+          <select id="mp-metric"></select>
+        </label>
+        <div class="mp-seg" role="group" aria-label="Rutas" id="mp-fam">
+          <button data-fam="todas" aria-pressed="true">Todas</button>
+          <button data-fam="DQX1" aria-pressed="false">DQX1</button>
+          <button data-fam="EQX1" aria-pressed="false">EQX1</button>
+        </div>
+      </div>
+
+      <div class="mp-day" id="mp-day" hidden>
+        <button class="ds-btn" id="mp-play" aria-pressed="false">▶ Jugar</button>
+        <button class="ds-btn ds-btn--ghost" id="mp-other" title="Otro día con las mismas condiciones: la tormenta y los cortes caen distinto">↻ Otro día</button>
+        <label class="ds-field">Velocidad
+          <select id="mp-speed">
+            <option value="5">Lenta</option>
+            <option value="15" selected>Normal</option>
+            <option value="40">Rápida</option>
+          </select>
+        </label>
+        <div class="mp-clock"><span id="mp-clock">06:30</span><input type="range" id="mp-time" min="390" max="1260" step="1" value="390" aria-label="Hora del día"></div>
+      </div>
+
+      <div class="ds-map-wrap mp-map-wrap">
+        <canvas id="mp-map" role="img" aria-label="Mapa de calor de la provincia de Cádiz por zonas de código postal, con la estación, las carreteras y las rutas"></canvas>
+        <div class="mp-tip" id="mp-tip" hidden></div>
+        <div class="mp-loading" id="mp-loading">Cargando el mapa…</div>
+      </div>
+
+      <div class="ds-legend mp-legend" id="mp-legend"></div>
+    </section>
+
+    <aside class="ds-panel mp-panel" aria-label="Condiciones y resultados">
+      <div class="ds-panel-head"><span class="ds-live"></span><h2>Condiciones del día</h2></div>
+
+      <div class="mp-chips" id="mp-scenarios" role="group" aria-label="Escenarios"></div>
+      <div class="ds-card mp-sliders" id="mp-sliders"></div>
+
+      <div class="ds-kpis mp-kpis" id="mp-kpis"></div>
+      <div class="mp-fams" id="mp-fams"></div>
+
+      <div class="ds-card" id="mp-why-card">
+        <h4>Qué pesa más <small id="mp-why-sub">frente a un día normal</small></h4>
+        <div id="mp-why" class="mp-why"></div>
+      </div>
+
+      <div class="ds-card">
+        <h4>Recomendación</h4>
+        <ul class="ds-alerts" id="mp-reco"></ul>
+      </div>
+
+      <div class="ds-card" id="mp-zone-card">
+        <h4>Zona <small>pasa el ratón o toca el mapa</small></h4>
+        <div id="mp-zone" class="mp-zone"><p class="mp-muted">Elige una zona para ver su detalle.</p></div>
+      </div>
+    </aside>
+
+    <div class="mp-about">
+      <div class="ds-card">
+        <h4>Cómo funciona</h4>
+        <p>La estación de <a href="../">DS Flow</a> reparte dos familias de rutas: <b>DQX1</b> (Bahía, Jerez, Costa Noroeste y La Janda) y <b>EQX1</b> (Campo de Gibraltar y Sierra). El <b>motor</b> planifica las rutas del día y las juega zona a zona: la lluvia frena a las furgonetas, el flash flood corta tramos inundables y deja barrios sin acceso, la huelga deja rutas sin conductor.</p>
+        <p>La <b>IA</b> es un modelo de gradient boosting entrenado con 12.000 días jugados por el motor. Predice al instante la entrega de cada zona, la de un día malo, y explica con valores de Shapley cuánto resta cada condición.</p>
+      </div>
+      <div class="ds-card">
+        <h4>Datos</h4>
+        <p>Zonas por código postal y población del Censo 2021 del INE. La estación, las rutas, la red de carreteras, el riesgo de inundación y los ritmos son ficticios o ilustrativos: no son datos de ninguna empresa.</p>
+        <p><a href="https://github.com/jorgeoliver7/ds-flow/blob/main/mapa/data/MODELO.md">Evaluación del modelo</a> · <a href="https://github.com/jorgeoliver7/ds-flow/blob/main/mapa/data/RESUMEN.md">Base geográfica</a> · <a href="https://github.com/jorgeoliver7/ds-flow/tree/main/mapa">Código</a></p>
+      </div>
+    </div>
+  </main>
+
+  <script src="reparto.js?v=2026-10-20.1"></script>
+  <script src="modelo.js?v=2026-10-20.1"></script>
+  <script src="ui.js?v=2026-10-20.1"></script>
+</body>
+</html>
