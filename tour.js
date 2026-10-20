@@ -1,13 +1,15 @@
 // Tour guiado: recorre un turno de principio a fin y para en lo importante, con una explicación en cada parada.
 // Ilumina la parte de la pantalla de la que habla y, cuando hace falta, adelanta el turno hasta la hora del paso.
-// ui.js le pasa un api con lo que necesita (motor, escenario, velocidad, pestañas...).
+// ui.js le pasa un api con lo que necesita (motor, escenario, velocidad, pestañas...). El mapa de Cádiz
+// lo usa con sus propios pasos: create(api, pasos); sin api.speed ni api.at no toca el reloj.
 (function (root) {
   "use strict";
 
   // Cada paso: target (selector de lo que se ilumina), title, body (texto o función que lo calcula con el turno
   // en marcha), at (hora del turno a la que se adelanta antes de mostrarlo), before (prepara la pantalla) y
-  // action (botón opcional que hace algo por quien mira).
-  const STEPS = [
+  // action (botón opcional que hace algo por quien mira). El último paso lleva final: true, o una lista
+  // de botones [{ label, run, out }] para terminar.
+  const DS_STEPS = [
     {
       target: ".ds-map-wrap", at: "01:40",
       before: (a) => { a.view("station"); a.setScenario("personal"); a.setCtab("search"); },
@@ -86,12 +88,12 @@
       target: "#ds-report-btn", spotPad: 8,
       before: (a) => a.view("station"),
       title: "Ya lo tienes",
-      body: "Al acabar el turno se abre un informe con lo que salió bien y lo que hay que mejorar, la productividad y el coste, y se puede comparar con otro escenario. Puedes seguir el turno en pantalla completa o ir directamente al informe.",
+      body: "Al acabar el turno se abre un informe con lo que salió bien y lo que hay que mejorar, la productividad y el coste, y se puede comparar con otro escenario. Desde el informe, \"Ver el reparto en Cádiz\" lleva lo que salió de la estación al mapa de la provincia, donde sigue el día en la calle. Puedes seguir el turno en pantalla completa o ir directamente al informe.",
       final: true,
     },
   ];
 
-  function create(api) {
+  function create(api, STEPS = DS_STEPS) {
     let i = -1, busy = false, timer = null, spot, card, prevSpeed = null, done = {};
 
     function el(tag, cls, html) { const e = document.createElement(tag); e.className = cls; if (html != null) e.innerHTML = html; return e; }
@@ -108,6 +110,7 @@
         else if (k === "prev") go(i - 1);
         else if (k === "close") stop();
         else if (k === "action") { const r = STEPS[i].action.run(api); if (r) done[i] = r; setTimeout(() => render(), 350); }
+        else if (k.startsWith("final-")) { const f = STEPS[i].final[+k.slice(6)]; stop(); f.run(api); }
         else if (k === "present") { stop(); api.present(true); }
         else if (k === "report") { stop(); api.finish(); }
       });
@@ -126,9 +129,8 @@
       if (card) return;
       mount();
       done = {};
-      prevSpeed = api.speed();
       // durante el tour el turno avanza despacio para que se vea moverse sin cambiar mientras se lee
-      api.setSpeed(10);
+      if (api.speed) { prevSpeed = api.speed(); api.setSpeed(10); }
       go(0);
     }
     function stop() {
@@ -139,7 +141,7 @@
       window.removeEventListener("scroll", place, true);
       spot.remove(); card.remove(); spot = card = null; i = -1;
       if (prevSpeed != null) api.setSpeed(prevSpeed);
-      api.setPaused(false);
+      if (api.setPaused) api.setPaused(false);
     }
 
     function go(n) {
@@ -149,7 +151,7 @@
       i = n;
       const st = STEPS[i];
       if (st.before && !back) st.before(api);
-      const target = st.at && !back ? api.at(st.at) : null;
+      const target = st.at && !back && api.at ? api.at(st.at) : null;
       if (target != null && api.S().t < target) {
         busy = true;
         card.innerHTML = `<p class="ds-eyebrow">Paso ${i + 1} de ${STEPS.length}</p><h3>${esc(st.title)}</h3><p class="ds-tour-ff"><span class="ds-spin"></span>Adelantando el turno hasta las ${st.at}…</p>`;
@@ -178,12 +180,14 @@
           <button class="ds-btn ds-btn--ghost" data-tour="close">Salir</button>
           <span class="ds-tour-dots" aria-hidden="true">${STEPS.map((_, k) => `<i class="${k === i ? "is-on" : ""}"></i>`).join("")}</span>
           ${i > 0 ? `<button class="ds-btn ds-btn--ghost" data-tour="prev" aria-label="Paso anterior">←</button>` : ""}
-          ${st.final
+          ${Array.isArray(st.final)
+            ? st.final.map((f, k) => `<button class="ds-btn${f.out ? " ds-btn--out" : ""}" data-tour="final-${k}">${esc(f.label)}</button>`).join("")
+            : st.final
             ? `<button class="ds-btn" data-tour="present">Pantalla completa</button><button class="ds-btn ds-btn--out" data-tour="report">Ver el informe</button>`
             : `<button class="ds-btn ds-btn--out" data-tour="next">Siguiente →</button>`}
         </div>`;
       place();
-      card.querySelector(st.final ? '[data-tour="report"]' : '[data-tour="next"]')?.focus({ preventScroll: true });
+      card.querySelector(Array.isArray(st.final) ? ".ds-btn--out[data-tour^=final]" : st.final ? '[data-tour="report"]' : '[data-tour="next"]')?.focus({ preventScroll: true });
     }
 
     // Coloca el foco de luz sobre lo que se explica y la tarjeta al lado (debajo, encima o, si no cabe, abajo del todo)
@@ -213,5 +217,5 @@
 
   const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
-  root.DSTour = { create, STEPS };
+  root.DSTour = { create, STEPS: DS_STEPS };
 })(typeof window !== "undefined" ? window : globalThis);

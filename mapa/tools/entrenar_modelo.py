@@ -34,7 +34,8 @@ RASGOS_ZONA = ["acceso_min", "acceso_km", "log_densidad", "log_area", "poblacion
 RASGOS_DIA = ["volumen", "lluvia", "inundacion", "huelga", "refuerzo", "retraso"]
 RASGOS = RASGOS_ZONA + RASGOS_DIA
 # El día malo de una familia de rutas no es la suma de los días malos de sus zonas
-# (no caen todos a la vez): se aprende aparte, con una fila por familia y día.
+# (no caen todos a la vez): se aprende aparte, con una fila por familia y día, como
+# lo que queda por debajo de la entrega esperada (la de las zonas) en un día malo.
 RASGOS_FAMILIA = RASGOS_DIA + ["eqx1", "total"]
 
 # Qué predice cada modelo
@@ -69,17 +70,18 @@ def entrenar(df, nombre, cfg):
 def familias_dia(df, por=("dia",)):
     """Tasa de entrega de cada familia (y del total) en cada día, por paquetes."""
     por = list(por)
-    d = df.assign(ent=df["tasa_entrega"] * df["paquetes"])
-    agg = {**{r: (r, "first") for r in RASGOS_DIA}, "ent": ("ent", "sum"), "paquetes": ("paquetes", "sum")}
+    d = df.assign(ent=df["tasa_entrega"] * df["paquetes"], pe=df["pred"] * df["paquetes"])
+    agg = {**{r: (r, "first") for r in RASGOS_DIA}, "ent": ("ent", "sum"), "pe": ("pe", "sum"), "paquetes": ("paquetes", "sum")}
     fam = d.groupby(por + ["eqx1"]).agg(**agg).reset_index().assign(total=0)
     tot = d.groupby(por).agg(**agg).reset_index().assign(eqx1=0, total=1)
     out = pd.concat([fam, tot], ignore_index=True)
-    return out.assign(tasa_entrega=out["ent"] / out["paquetes"])
+    out = out.assign(tasa_entrega=out["ent"] / out["paquetes"], esperada=out["pe"] / out["paquetes"])
+    return out.assign(margen=out["tasa_entrega"] - out["esperada"])
 
 
 def entrenar_dia_malo(fd):
     m = HistGradientBoostingRegressor(loss="quantile", quantile=0.1, **PARAMS, max_iter=150, max_leaf_nodes=15)
-    m.fit(fd[RASGOS_FAMILIA].to_numpy(), fd["tasa_entrega"].to_numpy())
+    m.fit(fd[RASGOS_FAMILIA].to_numpy(), fd["margen"].to_numpy())
     return m
 
 
@@ -144,7 +146,8 @@ def main():
         exportados[nombre] = exportar(modelos[nombre])
         print(f"  {nombre}: {len(exportados[nombre]['arboles'])} árboles en {time.time() - t:.0f} s")
 
-    fd_train, fd_test = familias_dia(train), familias_dia(test)
+    esperada = lambda d: d.assign(pred=np.clip(modelos["entrega"].predict(d[RASGOS].to_numpy()), 0, 1))
+    fd_train, fd_test = familias_dia(esperada(train)), familias_dia(esperada(test))
     dia_malo = entrenar_dia_malo(fd_train)
     dia_malo_exp = exportar(dia_malo)
     print(f"  dia_malo: {len(dia_malo_exp['arboles'])} árboles")
@@ -179,8 +182,8 @@ def main():
     mc_p10 = mc.merge(mc_media[["dia", "zona"]].assign(p10=modelos["entrega_p10"].predict(mc_media[RASGOS].to_numpy())), on=["dia", "zona"])
     cobertura = float(np.average(mc_p10["tasa_entrega"] < mc_p10["p10"] - 1e-9, weights=mc_p10["paquetes"]))
     # día malo por familia: cada repetición del Monte Carlo es un día entero
-    mc_fd = familias_dia(mc.assign(rep=mc.groupby(["dia", "zona"]).cumcount()), por=("dia", "rep"))
-    mc_fd_p10 = dia_malo.predict(mc_fd[RASGOS_FAMILIA].to_numpy())
+    mc_fd = familias_dia(esperada(mc.assign(rep=mc.groupby(["dia", "zona"]).cumcount())), por=("dia", "rep"))
+    mc_fd_p10 = mc_fd["esperada"].to_numpy() + dia_malo.predict(mc_fd[RASGOS_FAMILIA].to_numpy())
     cobertura_familia = float(np.mean(mc_fd["tasa_entrega"].to_numpy() < mc_fd_p10 - 1e-9))
 
     # Peso de cada rasgo: cuánto empeora el error al barajarlo (permutation importance)
@@ -210,10 +213,10 @@ def main():
         "rasgos_zona": RASGOS_ZONA,
         "rasgos_dia": RASGOS_DIA,
         "modelos": {n: {"texto": MODELOS[n]["texto"], **exportados[n]} for n in MODELOS},
-        "dia_malo": {"texto": "Tasa de entrega de una familia de rutas en un día malo (percentil 10)", "rasgos": RASGOS_FAMILIA, **dia_malo_exp},
+        "dia_malo": {"texto": "Lo que baja la entrega de una familia de rutas en un día malo (percentil 10) frente a la esperada", "rasgos": RASGOS_FAMILIA, **dia_malo_exp},
         "metricas": metricas,
         "verificacion": verificacion,
-        "verificacion_dia_malo": [{"x": [float(v) for v in x], "p10": float(dia_malo.predict([x])[0])} for x in fd_test.sample(10, random_state=5)[RASGOS_FAMILIA].to_numpy()],
+        "verificacion_dia_malo": [{"x": [float(v) for v in x], "margen": float(dia_malo.predict([x])[0])} for x in fd_test.sample(10, random_state=5)[RASGOS_FAMILIA].to_numpy()],
     }
     with open(OUT_JSON, "w", encoding="utf-8") as f:
         json.dump(salida, f, ensure_ascii=False, separators=(",", ":"))

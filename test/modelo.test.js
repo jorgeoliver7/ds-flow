@@ -14,7 +14,7 @@ test("el navegador predice lo mismo que el modelo entrenado en Python", () => {
       assert.ok(Math.abs(M.predecir(modelo.modelos[n], v.x) - v[n]) < 1e-4, n);
     }
   }
-  for (const v of modelo.verificacion_dia_malo) assert.ok(Math.abs(M.predecir(modelo.dia_malo, v.x) - v.p10) < 1e-4, "dia_malo");
+  for (const v of modelo.verificacion_dia_malo) assert.ok(Math.abs(M.predecir(modelo.dia_malo, v.x) - v.margen) < 1e-4, "dia_malo");
 });
 
 test("las predicciones son tasas y el día malo nunca sale mejor que el esperado", () => {

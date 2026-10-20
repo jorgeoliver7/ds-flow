@@ -479,13 +479,25 @@
     dibujar();
   }
 
+  function ponerEscenario(id) {
+    const e = R.ESCENARIOS.find((x) => x.id === id);
+    st.escenario = e.id; st.cond = { ...R.NORMAL, ...e.condiciones };
+    if (st.desde && st.desde.cond) st.cond = { ...st.cond, volumen: st.desde.cond.volumen, retraso: Math.max(st.cond.retraso, st.desde.cond.retraso) };
+    st.jugando = false; pintarControles(); actualizar(); botonJugar();
+  }
+
+  function ponerModo(modo) {
+    st.modo = modo;
+    document.querySelectorAll(".mp-seg [data-mode]").forEach((x) => x.setAttribute("aria-selected", String(x.dataset.mode === modo)));
+    st.metrica = METRICAS[st.modo][0].id;
+    $("mp-day").hidden = st.modo !== "dia";
+    st.jugando = st.modo === "dia";
+    pintarControles(); actualizar(); botonJugar();
+  }
+
   function enlazar() {
     $("mp-scenarios").addEventListener("click", (ev) => {
-      const b = ev.target.closest("button[data-esc]"); if (!b) return;
-      const e = R.ESCENARIOS.find((x) => x.id === b.dataset.esc);
-      st.escenario = e.id; st.cond = { ...R.NORMAL, ...e.condiciones };
-      if (st.desde && st.desde.cond) st.cond = { ...st.cond, volumen: st.desde.cond.volumen, retraso: Math.max(st.cond.retraso, st.desde.cond.retraso) };
-      st.jugando = false; pintarControles(); actualizar(); botonJugar();
+      const b = ev.target.closest("button[data-esc]"); if (b) ponerEscenario(b.dataset.esc);
     });
     $("mp-sliders").addEventListener("input", (ev) => {
       const inp = ev.target; if (inp.type !== "range") return;
@@ -498,14 +510,8 @@
       st.jugando = false; botonJugar();
       actualizar();
     });
-    document.querySelectorAll(".mp-seg [data-mode]").forEach((b) => b.addEventListener("click", () => {
-      st.modo = b.dataset.mode;
-      document.querySelectorAll(".mp-seg [data-mode]").forEach((x) => x.setAttribute("aria-selected", String(x === b)));
-      st.metrica = METRICAS[st.modo][0].id;
-      $("mp-day").hidden = st.modo !== "dia";
-      st.jugando = st.modo === "dia";
-      pintarControles(); actualizar(); botonJugar();
-    }));
+    document.querySelectorAll(".mp-seg [data-mode]").forEach((b) => b.addEventListener("click", () => ponerModo(b.dataset.mode)));
+    $("mp-tour").addEventListener("click", () => (tour.active ? tour.stop() : tour.start()));
     $("mp-fam").addEventListener("click", (ev) => {
       const b = ev.target.closest("button[data-fam]"); if (!b) return;
       st.fam = b.dataset.fam;
@@ -578,6 +584,7 @@
     }
     antes = ahora;
     requestAnimationFrame(bucle);
+    if (new URLSearchParams(location.search).get("tour") === "1") tour.start();
   }
 
   // ── Viene de DS Flow: ?desde=dsflow&turno=...&paquetes=...&retraso=... ──
@@ -603,6 +610,22 @@
     }
     if (q.get("modo") === "dia") { st.modo = "dia"; st.metrica = METRICAS.dia[0].id; }
   }
+
+  // ── Tour guiado (los pasos están en tour-mapa.js; el motor del tour es el de DS Flow) ──
+  const tour = DSTour.create({
+    escenario: ponerEscenario,
+    modo: (m) => { if (st.modo !== m) ponerModo(m); },
+    res: () => st.res,
+    porQue: () => st.ia.explicar(st.cond, { familias: familias() }),
+    peorZona: () => {
+      const i = st.pred.reduce((b, z, k) => (z.activa && (b == null || z.p10 < st.pred[b].p10) ? k : b), null);
+      st.sel = i; pintarZona(); dibujar();
+      return { ...st.base.zonas[i], p10: st.pred[i].p10 };
+    },
+    otra: () => st.base.otra_estacion,
+    dsflow: () => { location.href = document.querySelector(".ds-back").href; },
+    pct: (v) => pct(v),
+  }, DSMapaTour.STEPS);
 
   async function iniciar() {
     $("ds-theme").textContent = document.documentElement.dataset.theme === "light" ? "☾" : "☀";

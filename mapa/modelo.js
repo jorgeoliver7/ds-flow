@@ -53,14 +53,14 @@
       const diaMalo = (fam) => {
         // con una sola familia en juego, el total es esa familia
         const f = fam === "total" && activas.size === 1 ? [...activas][0] : fam;
-        return predecir(modelo.dia_malo, zs.dia.concat([f === "EQX1" ? 1 : 0, f === "total" ? 1 : 0]));
+        return predecir(modelo.dia_malo, zs.dia.concat([f === "EQX1" ? 1 : 0, f === "total" ? 1 : 0]));  // margen (negativo)
       };
       for (const fam of ["total", ...Object.keys(DSReparto.P.familias)]) {
         const sel = zs.filter((z) => z.activa && (fam === "total" || z.rutas === fam));
         const paq = sel.reduce((a, z) => a + z.paquetes, 0);
         const m = (k) => (paq ? sel.reduce((a, z) => a + z[k] * z.paquetes, 0) / paq : 0);
         const entrega = m("entrega");
-        const p10 = paq && zs.dia ? Math.min(entrega, clamp01(diaMalo(fam))) : m("p10");
+        const p10 = paq && zs.dia ? clamp01(entrega + Math.min(0, diaMalo(fam))) : m("p10");
         out[fam] = { paquetes: paq, entrega, p10, fallidos: m("fallidos"), noEntregados: Math.round(paq * (1 - entrega)) };
       }
       return out;
