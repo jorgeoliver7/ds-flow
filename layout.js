@@ -37,9 +37,10 @@ const DS_LAYOUT = {
     moveMinutes: 1,      // lo que tarda un carro en llegar a inducción
     staleMinutes: 4,       // un carro a medio llenar se lleva tras este tiempo sin cambios
     desc: "Lo que sale del camión se coloca en carros, separados por grupo y por tamaño. Cuando inducción tiene hueco, alguien lleva el siguiente carro hasta allí.",
+    // EQX1 (Sierra) sale en la primera oleada, del pasillo A; DQX1 llena el resto
     groups: [
-      { id: "EQX1", aisles: [0, 1] },
-      { id: "DQX1", aisles: [2] },
+      { id: "EQX1", aisles: [0] },
+      { id: "DQX1", aisles: [1, 2] },
     ],
     classes: [
       { id: "S", name: "Pequeños", short: "PEQ", cap: 60 },

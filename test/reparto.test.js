@@ -32,8 +32,8 @@ test("la misma semilla da el mismo día", () => {
 
 test("un día normal sale como en DS Flow: 120 rutas, 26.000 paquetes y casi todo entregado", () => {
   const r = R.simular(base, {}, { seed: 1 });
-  assert.equal(r.kpis.EQX1.rutas, 80);
-  assert.equal(r.kpis.DQX1.rutas, 40);
+  assert.equal(r.kpis.EQX1.rutas, 20);
+  assert.equal(r.kpis.DQX1.rutas, 100);
   assert.ok(Math.abs(r.kpis.total.paquetes - 26000) < 50);
   assert.equal(r.cortados.length, 0);
   assert.ok(media({}, "tasaEntrega", "DQX1") > 0.97);
@@ -52,6 +52,15 @@ test("la lluvia, la inundación, la huelga y el retraso empeoran la entrega", ()
   for (const c of [{ lluvia: 0.9 }, { lluvia: 1, inundacion: 0.8 }, { huelga: 0.35 }, { retraso: 75 }, { volumen: 1.5 }]) {
     assert.ok(media(c, "tasaEntrega") < normal - 0.01, JSON.stringify(c));
   }
+});
+
+test("el Campo de Gibraltar no es de la estación: lo reparte otra de Málaga", () => {
+  const cdg = ["Algeciras", "La Línea de la Concepción", "San Roque", "Los Barrios", "Tarifa"];
+  assert.ok(base.zonas.every((z) => !cdg.includes(z.municipio)));
+  assert.ok(base.carreteras.every((t) => !cdg.includes(t.desde) && !cdg.includes(t.hasta)));
+  assert.equal(base.otra_estacion.zona, "Campo de Gibraltar");
+  assert.ok(base.contexto["Campo de Gibraltar"]);
+  assert.ok(base.zonas.filter((z) => z.rutas === "EQX1").every((z) => z.comarca === "Sierra de Cádiz"));
 });
 
 test("la inundación corta tramos inundables y deja paquetes sin acceso", () => {

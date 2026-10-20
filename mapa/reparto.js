@@ -22,15 +22,17 @@
   // Parámetros del reparto. Valores de ejemplo, redondeados y verosímiles: no son
   // datos de ninguna empresa.
   const P = {
-    // lo que sale de la estación de DS Flow en una noche normal: 120 rutas, 80 EQX1
-    // (pasillos A y B, oleadas de 06:30 a 07:15) y 40 DQX1 (pasillo C, 07:30 y 07:45)
+    // lo que sale de la estación de DS Flow en una noche normal: 120 rutas en seis
+    // oleadas de 20. Las rutas de cada familia van en proporción a su trabajo: la
+    // Sierra (EQX1) tiene poca población pero queda lejos, así que sus 20 rutas
+    // salen las primeras; las 100 DQX1 salen de 06:45 a 07:45.
     paquetes: 26000,
     familias: {
-      EQX1: { rutas: 80, oleadas: ["06:30", "06:45", "07:00", "07:15"] },
-      DQX1: { rutas: 40, oleadas: ["07:30", "07:45"] },
+      EQX1: { rutas: 20, oleadas: ["06:30"] },
+      DQX1: { rutas: 100, oleadas: ["06:45", "07:00", "07:15", "07:30", "07:45"] },
     },
     carga: 10,             // minutos desde la oleada hasta que la furgoneta arranca
-    jornada: 600,          // bloque del conductor: de su oleada a volver a la estación (10 h),
+    jornada: 540,          // bloque del conductor: de su oleada a volver a la estación (9 h),
                            // así que si la estación sale tarde, el retraso se come la jornada
     planificada: 0.85,     // las rutas se planifican para usar este tanto de la jornada
     // por tipo de zona: paquetes por parada, minutos por parada (bajar, entregar,
@@ -232,16 +234,10 @@
     };
     const accesoNormal = (zp) => normal.get(zp.z.municipio).min + localMin(zp, 0);
 
-    // 3. Paquetes por zona: el volumen de cada familia repartido por población y compra online
-    const paquetesZona = new Array(prep.zonas.length).fill(0);
-    const totalRutas = Object.values(P.familias).reduce((s, f) => s + f.rutas, 0);
-    for (const fam of Object.keys(P.familias)) {
-      const zs = prep.zonas.filter((zp) => zp.z.rutas === fam);
-      const pesos = zs.map((zp) => zp.peso * ruido(rand, 0.05));
-      const sum = pesos.reduce((a, b) => a + b, 0);
-      const famPaq = (totalPaq * P.familias[fam].rutas) / totalRutas;
-      zs.forEach((zp, k) => (paquetesZona[zp.i] = Math.round((famPaq * pesos[k]) / sum)));
-    }
+    // 3. Paquetes por zona: el volumen de la estación repartido por población y compra online
+    const pesos = prep.zonas.map((zp) => zp.peso * ruido(rand, 0.05));
+    const sumPesos = pesos.reduce((a, b) => a + b, 0);
+    const paquetesZona = pesos.map((w) => Math.round((totalPaq * w) / sumPesos));
 
     // 4. Planificación y reparto, familia a familia
     const rutas = [];

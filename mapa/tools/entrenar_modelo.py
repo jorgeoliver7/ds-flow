@@ -33,6 +33,9 @@ OUT_MD = os.path.join(ROOT, "mapa", "data", "MODELO.md")
 RASGOS_ZONA = ["acceso_min", "acceso_km", "log_densidad", "log_area", "poblacion_k", "riesgo", "lluvia_rel", "tramos_inundables", "eqx1", "angulo", "lon", "lat"]
 RASGOS_DIA = ["volumen", "lluvia", "inundacion", "huelga", "refuerzo", "retraso"]
 RASGOS = RASGOS_ZONA + RASGOS_DIA
+# El día malo de una familia de rutas no es la suma de los días malos de sus zonas
+# (no caen todos a la vez): se aprende aparte, con una fila por familia y día.
+RASGOS_FAMILIA = RASGOS_DIA + ["eqx1", "total"]
 
 # Qué predice cada modelo
 MODELOS = {
@@ -45,10 +48,38 @@ PARAMS = {"learning_rate": 0.1, "min_samples_leaf": 40, "l2_regularization": 1.0
 TAMANO = {"entrega": {"max_iter": 250, "max_leaf_nodes": 31}, "entrega_p10": {"max_iter": 200, "max_leaf_nodes": 23}, "fallidos": {"max_iter": 150, "max_leaf_nodes": 15}}
 
 
+def pesos(df):
+    """Cada fila pesa por sus paquetes, y las dos familias de rutas pesan lo mismo
+    en total: si no, la Sierra (EQX1, un 11% de los paquetes) apenas contaría y el
+    modelo la aprendería peor."""
+    paq = df["paquetes"].to_numpy(dtype=float)
+    eqx1 = df["eqx1"].to_numpy() == 1
+    w = paq.copy()
+    w[eqx1] *= paq[~eqx1].sum() / max(paq[eqx1].sum(), 1)
+    return w
+
+
 def entrenar(df, nombre, cfg):
     extra = {"quantile": cfg["quantile"]} if cfg["loss"] == "quantile" else {}
     m = HistGradientBoostingRegressor(loss=cfg["loss"], **extra, **PARAMS, **TAMANO[nombre])
-    m.fit(df[RASGOS].to_numpy(), df[cfg["objetivo"]].to_numpy(), sample_weight=df["paquetes"].to_numpy())
+    m.fit(df[RASGOS].to_numpy(), df[cfg["objetivo"]].to_numpy(), sample_weight=pesos(df))
+    return m
+
+
+def familias_dia(df, por=("dia",)):
+    """Tasa de entrega de cada familia (y del total) en cada día, por paquetes."""
+    por = list(por)
+    d = df.assign(ent=df["tasa_entrega"] * df["paquetes"])
+    agg = {**{r: (r, "first") for r in RASGOS_DIA}, "ent": ("ent", "sum"), "paquetes": ("paquetes", "sum")}
+    fam = d.groupby(por + ["eqx1"]).agg(**agg).reset_index().assign(total=0)
+    tot = d.groupby(por).agg(**agg).reset_index().assign(eqx1=0, total=1)
+    out = pd.concat([fam, tot], ignore_index=True)
+    return out.assign(tasa_entrega=out["ent"] / out["paquetes"])
+
+
+def entrenar_dia_malo(fd):
+    m = HistGradientBoostingRegressor(loss="quantile", quantile=0.1, **PARAMS, max_iter=150, max_leaf_nodes=15)
+    m.fit(fd[RASGOS_FAMILIA].to_numpy(), fd["tasa_entrega"].to_numpy())
     return m
 
 
@@ -113,11 +144,18 @@ def main():
         exportados[nombre] = exportar(modelos[nombre])
         print(f"  {nombre}: {len(exportados[nombre]['arboles'])} árboles en {time.time() - t:.0f} s")
 
+    fd_train, fd_test = familias_dia(train), familias_dia(test)
+    dia_malo = entrenar_dia_malo(fd_train)
+    dia_malo_exp = exportar(dia_malo)
+    print(f"  dia_malo: {len(dia_malo_exp['arboles'])} árboles")
+
     # El modelo exportado tiene que dar lo mismo que el de scikit-learn
     muestra = test.sample(300, random_state=1)[RASGOS].to_numpy()
     for nombre, m in modelos.items():
         dif = np.max(np.abs(predecir_exportado(exportados[nombre], muestra) - m.predict(muestra)))
         assert dif < 1e-4, f"{nombre}: la exportación no cuadra ({dif})"
+    muestra = fd_test.sample(300, random_state=1)[RASGOS_FAMILIA].to_numpy()
+    assert np.max(np.abs(predecir_exportado(dia_malo_exp, muestra) - dia_malo.predict(muestra))) < 1e-4, "dia_malo: la exportación no cuadra"
 
     w = test["paquetes"].to_numpy()
     y = test["tasa_entrega"].to_numpy()
@@ -140,6 +178,10 @@ def main():
     mc_mae = mae(mc_p, mc_media["y"].to_numpy(), mc_media["paquetes"].to_numpy())
     mc_p10 = mc.merge(mc_media[["dia", "zona"]].assign(p10=modelos["entrega_p10"].predict(mc_media[RASGOS].to_numpy())), on=["dia", "zona"])
     cobertura = float(np.average(mc_p10["tasa_entrega"] < mc_p10["p10"] - 1e-9, weights=mc_p10["paquetes"]))
+    # día malo por familia: cada repetición del Monte Carlo es un día entero
+    mc_fd = familias_dia(mc.assign(rep=mc.groupby(["dia", "zona"]).cumcount()), por=("dia", "rep"))
+    mc_fd_p10 = dia_malo.predict(mc_fd[RASGOS_FAMILIA].to_numpy())
+    cobertura_familia = float(np.mean(mc_fd["tasa_entrega"].to_numpy() < mc_fd_p10 - 1e-9))
 
     # Peso de cada rasgo: cuánto empeora el error al barajarlo (permutation importance)
     base_err = mae(p, y, w)
@@ -154,7 +196,7 @@ def main():
         "filas_entrenamiento": int(len(train)), "filas_prueba": int(len(test)), "dias": int(len(dias)),
         "entrega": {"mae": mae(p, y, w), "r2": r2(y, p, w), "mae_lineal": mae(pl, y, w), "r2_lineal": r2(y, pl, w), "mae_media": mae(media, y, w)},
         "familia_dia": {"mae": fam_mae, "mae_lineal": fam_mae_lineal},
-        "montecarlo": {"dias": int(mc["dia"].nunique()), "repeticiones": int(mc.groupby(["dia", "zona"]).size().max()), "mae": mc_mae, "cobertura_p10": cobertura},
+        "montecarlo": {"dias": int(mc["dia"].nunique()), "repeticiones": int(mc.groupby(["dia", "zona"]).size().max()), "mae": mc_mae, "cobertura_p10": cobertura, "cobertura_p10_familia": cobertura_familia},
         "fallidos": {"mae": mae(pf, yf, w), "r2": r2(yf, pf, w)},
         "importancia": {k: round(v, 5) for k, v in sorted(importancia.items(), key=lambda kv: -kv[1])},
     }
@@ -168,8 +210,10 @@ def main():
         "rasgos_zona": RASGOS_ZONA,
         "rasgos_dia": RASGOS_DIA,
         "modelos": {n: {"texto": MODELOS[n]["texto"], **exportados[n]} for n in MODELOS},
+        "dia_malo": {"texto": "Tasa de entrega de una familia de rutas en un día malo (percentil 10)", "rasgos": RASGOS_FAMILIA, **dia_malo_exp},
         "metricas": metricas,
         "verificacion": verificacion,
+        "verificacion_dia_malo": [{"x": [float(v) for v in x], "p10": float(dia_malo.predict([x])[0])} for x in fd_test.sample(10, random_state=5)[RASGOS_FAMILIA].to_numpy()],
     }
     with open(OUT_JSON, "w", encoding="utf-8") as f:
         json.dump(salida, f, ensure_ascii=False, separators=(",", ":"))
@@ -212,7 +256,7 @@ def escribir_md(m):
         "- la tasa de entrega en un **día malo** (percentil 10: nueve de cada diez días salen mejor),",
         "- la tasa de **entregas fallidas**.",
         "",
-        "Son tres modelos de gradient boosting con árboles (scikit-learn, `HistGradientBoostingRegressor`), exportados a JSON y evaluados en el navegador por `mapa/modelo.js`, sin dependencias. Las filas pesan por paquetes, así que el error está medido por paquete.",
+        "Son tres modelos de gradient boosting con árboles por zona, más uno por familia de rutas para el día malo (scikit-learn, `HistGradientBoostingRegressor`), exportados a JSON y evaluados en el navegador por `mapa/modelo.js`, sin dependencias. Las filas pesan por paquetes, así que el error está medido por paquete.",
         "",
         "## Qué tal predice",
         "",
@@ -226,7 +270,7 @@ def escribir_md(m):
         "",
         f"Un día concreto lleva su azar (qué tramos se cortan, cómo rinde cada conductor), así que parte de ese error no se puede predecir. Contra la **media de {mc['repeticiones']} días jugados con las mismas condiciones** ({mc['dias']} condiciones distintas), que es lo que el modelo intenta estimar, el error medio por zona baja a **{pct(mc['mae'])}**.",
         "",
-        f"El percentil 10 queda por encima del resultado real en el {mc['cobertura_p10'] * 100:.0f}% de esos días (lo ideal es el 10%).",
+        f"El percentil 10 de cada zona queda por encima del resultado real en el {mc['cobertura_p10'] * 100:.0f}% de esos días (lo ideal es el 10%). El día malo de una familia de rutas no es la suma de los días malos de sus zonas, porque no caen todos a la vez: lo da un cuarto modelo, entrenado con una fila por familia y día, que queda por encima del resultado real en el {mc['cobertura_p10_familia'] * 100:.0f}% de los días.",
         "",
         f"Entregas fallidas: error medio de {pct(m['fallidos']['mae'])}, R² {decimal(m['fallidos']['r2'], 3)}.",
         "",

@@ -14,12 +14,12 @@
   const NOMBRE_COND = { volumen: "Volumen", lluvia: "Lluvia", inundacion: "Flash flood", huelga: "Huelga", refuerzo: "Refuerzo", retraso: "Retraso de salida" };
   const CORTOS = {
     "Jerez de la Frontera": "Jerez", "El Puerto de Santa María": "El Puerto", "Chiclana de la Frontera": "Chiclana", "Sanlúcar de Barrameda": "Sanlúcar",
-    "La Línea de la Concepción": "La Línea", "Arcos de la Frontera": "Arcos", "Vejer de la Frontera": "Vejer", "Medina Sidonia": "Medina",
+    "Arcos de la Frontera": "Arcos", "Vejer de la Frontera": "Vejer", "Medina Sidonia": "Medina",
   };
-  const ETIQUETAS = ["Jerez de la Frontera", "Cádiz", "Algeciras", "San Fernando", "El Puerto de Santa María", "Chiclana de la Frontera", "Sanlúcar de Barrameda",
-    "La Línea de la Concepción", "Arcos de la Frontera", "Ubrique", "Tarifa", "Olvera", "Medina Sidonia", "Vejer de la Frontera", "Grazalema"];
+  const ETIQUETAS = ["Jerez de la Frontera", "Cádiz", "San Fernando", "El Puerto de Santa María", "Chiclana de la Frontera", "Sanlúcar de Barrameda",
+    "Arcos de la Frontera", "Ubrique", "Olvera", "Medina Sidonia", "Vejer de la Frontera", "Grazalema", "Barbate"];
   // en pantallas estrechas, solo los que no se pisan
-  const ETIQUETAS_SM = ["Jerez de la Frontera", "Cádiz", "Algeciras", "Sanlúcar de Barrameda", "Arcos de la Frontera", "Ubrique", "Tarifa", "Olvera", "Vejer de la Frontera"];
+  const ETIQUETAS_SM = ["Jerez de la Frontera", "Cádiz", "Sanlúcar de Barrameda", "Arcos de la Frontera", "Ubrique", "Olvera", "Vejer de la Frontera"];
 
   const METRICAS = {
     ia: [
@@ -116,6 +116,8 @@
     };
     st.paths = st.base.zonas.map((z) => path(z.geometria));
     st.contexto = Object.entries(st.base.contexto).map(([k, g]) => ({ nombre: k, path: path(g), g }));
+    // el Campo de Gibraltar lo reparte otra estación: se dibuja rayado y no es una zona nuestra
+    st.otra = st.contexto.find((c) => c.nombre === st.base.otra_estacion.zona);
     st.provincia = path(st.base.provincia);
   }
 
@@ -129,6 +131,13 @@
     ctx.fillStyle = rgb(mix(PAL.zona, PAL.floor, 0.35));
     ctx.strokeStyle = PAL.line; ctx.lineWidth = 1;
     for (const c of st.contexto) { ctx.fill(c.path, "evenodd"); ctx.stroke(c.path); }
+    if (st.otra) {
+      ctx.save(); ctx.clip(st.otra.path, "evenodd");
+      ctx.strokeStyle = PAL.line; ctx.lineWidth = 1; ctx.beginPath();
+      for (let d = -st.h; d < st.w; d += 7) { ctx.moveTo(d, st.h); ctx.lineTo(d + st.h, 0); }
+      ctx.stroke(); ctx.restore();
+      if (st.hover === "otra") { ctx.strokeStyle = PAL.muted; ctx.lineWidth = 1.6; ctx.stroke(st.otra.path); }
+    }
     ctx.font = `500 ${clamp(st.escalaPx * 0.022, 12, 16)}px DM Sans, sans-serif`;
     ctx.fillStyle = PAL.muted; ctx.textAlign = "center";
     const etiquetas = { Sevilla: [-5.75, 37.0], "Málaga": [-5.22, 36.6], Marruecos: [-5.55, 35.99], Gibraltar: [-5.3, 36.1] };
@@ -148,6 +157,16 @@
     carreteras(ctx);
     if (st.modo === "dia" && st.dia) furgonetas(ctx);
 
+    // rótulo del Campo de Gibraltar, encima de las zonas para que no lo tapen
+    if (st.otra) {
+      const [px, py] = st.proj(-5.43, 36.27);
+      ctx.textAlign = "center";
+      ctx.font = `500 ${clamp(st.escalaPx * 0.02, 11, 15)}px DM Sans, sans-serif`;
+      halo(ctx, st.base.otra_estacion.zona, px, py, PAL.muted);
+      ctx.font = `400 ${clamp(st.escalaPx * 0.016, 10, 12.5)}px DM Sans, sans-serif`;
+      halo(ctx, st.w < 560 ? `estación de ${st.base.otra_estacion.estacion}` : `lo reparte la estación de ${st.base.otra_estacion.estacion}`, px, py + clamp(st.escalaPx * 0.024, 12, 17), PAL.muted);
+    }
+
     // estación y pueblos
     ctx.font = `500 ${clamp(st.escalaPx * 0.019, 11, 13.5)}px DM Sans, sans-serif`;
     ctx.textAlign = "left";
@@ -165,14 +184,14 @@
 
     // zona elegida o bajo el ratón
     for (const [i, w] of [[st.sel, 2.4], [st.hover, 1.6]]) {
-      if (i == null) continue;
+      if (i == null || i === "otra") continue;
       ctx.strokeStyle = PAL.fg; ctx.lineWidth = w; ctx.stroke(st.paths[i]);
     }
   }
 
-  function halo(ctx, txt, x, y) {
+  function halo(ctx, txt, x, y, color = PAL.fg) {
     ctx.lineWidth = 3; ctx.strokeStyle = rgb(PAL.floor, 0.75); ctx.lineJoin = "round";
-    ctx.strokeText(txt, x, y); ctx.fillStyle = PAL.fg; ctx.fillText(txt, x, y);
+    ctx.strokeText(txt, x, y); ctx.fillStyle = color; ctx.fillText(txt, x, y);
   }
 
   function carreteras(ctx) {
@@ -397,8 +416,14 @@
       recos.push([sin.entrega - r.entrega > 0.01 ? "warn" : "ok", `El retraso de salida de la estación (${Math.round(c.retraso)} min) cuesta ${pts(sin.entrega - r.entrega).replace("+", "")} puntos: unos ${n0((sin.entrega - r.entrega) * r.paquetes)} paquetes. Se gana en el sort de <a href="../">DS Flow</a>.`]);
     }
     if (c.inundacion > 0) {
-      const peores = st.pred.filter((z) => z.activa).sort((a, b) => a.p10 - b.p10).slice(0, 3)
-        .map((z) => { const zz = st.base.zonas[st.idx.get(z.id)]; return `${zz.municipio} (${zz.cp})`; });
+      // las cinco zonas con peor día malo, agrupadas por municipio
+      const porMuni = new Map();
+      for (const z of st.pred.filter((z) => z.activa).sort((a, b) => a.p10 - b.p10).slice(0, 5)) {
+        const zz = st.base.zonas[st.idx.get(z.id)];
+        if (!porMuni.has(zz.municipio)) porMuni.set(zz.municipio, []);
+        porMuni.get(zz.municipio).push(zz.cp);
+      }
+      const peores = [...porMuni].map(([m, cps]) => `${m} (${cps.join(", ")})`);
       recos.push(["bad", `Zonas más expuestas al flash flood: ${peores.join(", ")}. Conviene avisar a los clientes y no cargar ahí paquetes con hora.`]);
     }
     if (st.fam === "todas" && st.res.EQX1.paquetes && st.res.DQX1.paquetes && st.res.EQX1.entrega < st.res.DQX1.entrega - 0.04) {
@@ -408,7 +433,7 @@
   }
 
   function pintarZona() {
-    const i = st.sel != null ? st.sel : st.hover;
+    const i = st.sel != null ? st.sel : st.hover === "otra" ? null : st.hover;
     if (i == null) { $("mp-zone").innerHTML = `<p class="mp-muted">Elige una zona para ver su detalle.</p>`; return; }
     const z = st.base.zonas[i], p = st.pred[i];
     const filas = [
@@ -433,7 +458,7 @@
     const extra = st.modo === "dia"
       ? `<span><i class="mp-van" style="background:${PAL.a}"></i>DQX1</span><span><i class="mp-van" style="background:${PAL.c}"></i>EQX1</span><span><i class="mp-cut"></i>Tramo cortado</span>`
       : st.cond.inundacion > 0 ? `<span><i class="mp-flood"></i>Riesgo de corte (más grueso, más probable)</span>` : "";
-    $("mp-legend").innerHTML = `<span>${m.nombre}</span><span class="mp-ramp-lbl">${E.fmt(E.min)}</span><i class="mp-ramp" style="background:${grad}"></i><span class="mp-ramp-lbl">${E.fmt(E.max)}</span><span>■ Estación</span>${extra}`;
+    $("mp-legend").innerHTML = `<span>${m.nombre}</span><span class="mp-ramp-lbl">${E.fmt(E.min)}</span><i class="mp-ramp" style="background:${grad}"></i><span class="mp-ramp-lbl">${E.fmt(E.max)}</span><span>■ Estación</span><span><i class="mp-otra"></i>${esc(st.base.otra_estacion.zona)}: otra estación</span>${extra}`;
   }
 
   // ── Controles ───────────────────────────────────────
@@ -509,6 +534,7 @@
       const ctx = cv.getContext("2d");
       ctx.setTransform(st.dpr, 0, 0, st.dpr, 0, 0);
       for (let i = 0; i < st.paths.length; i++) if (ctx.isPointInPath(st.paths[i], x, y)) return i;
+      if (st.otra && ctx.isPointInPath(st.otra.path, x, y, "evenodd")) return "otra";
       return null;
     };
     cv.addEventListener("mousemove", (ev) => {
@@ -516,8 +542,13 @@
       if (i !== st.hover) { st.hover = i; pintarZona(); dibujar(); }
       const tip = $("mp-tip");
       if (i == null) { tip.hidden = true; return; }
-      const z = st.base.zonas[i], v = valorZona(i), E = escala(), m = METRICAS[st.modo].find((x) => x.id === st.metrica);
-      tip.innerHTML = `<b>${esc(z.municipio)}</b><span>${z.cp} · rutas ${z.rutas}</span><br>${m.nombre}: <b style="display:inline">${v == null ? "—" : E.fmt(v)}</b>`;
+      if (i === "otra") {
+        const o = st.base.otra_estacion;
+        tip.innerHTML = `<b>${esc(o.zona)}</b><span>Lo reparte una estación de ${esc(o.estacion)}, no la nuestra.</span>`;
+      } else {
+        const z = st.base.zonas[i], v = valorZona(i), E = escala(), m = METRICAS[st.modo].find((x) => x.id === st.metrica);
+        tip.innerHTML = `<b>${esc(z.municipio)}</b><span>${z.cp} · rutas ${z.rutas}</span><br>${m.nombre}: <b style="display:inline">${v == null ? "—" : E.fmt(v)}</b>`;
+      }
       const r = cv.getBoundingClientRect();
       tip.hidden = false;
       const x = ev.clientX - r.left + 14, y = ev.clientY - r.top + 14;
@@ -525,7 +556,7 @@
       tip.style.top = Math.min(y, st.h - tip.offsetHeight - 8) + "px";
     });
     cv.addEventListener("mouseleave", () => { st.hover = null; $("mp-tip").hidden = true; pintarZona(); dibujar(); });
-    cv.addEventListener("click", (ev) => { const i = zonaEn(ev); st.sel = i === st.sel ? null : i; pintarZona(); dibujar(); });
+    cv.addEventListener("click", (ev) => { const i = zonaEn(ev); st.sel = i === st.sel || i === "otra" ? null : i; pintarZona(); dibujar(); });
     let resize = null;
     window.addEventListener("resize", () => { clearTimeout(resize); resize = setTimeout(() => { medir(); dibujar(); }, 120); });
   }

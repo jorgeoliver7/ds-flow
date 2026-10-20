@@ -14,6 +14,7 @@ test("el navegador predice lo mismo que el modelo entrenado en Python", () => {
       assert.ok(Math.abs(M.predecir(modelo.modelos[n], v.x) - v[n]) < 1e-4, n);
     }
   }
+  for (const v of modelo.verificacion_dia_malo) assert.ok(Math.abs(M.predecir(modelo.dia_malo, v.x) - v.p10) < 1e-4, "dia_malo");
 });
 
 test("las predicciones son tasas y el día malo nunca sale mejor que el esperado", () => {
@@ -28,7 +29,8 @@ test("las predicciones son tasas y el día malo nunca sale mejor que el esperado
 test("por familia de rutas, el modelo se acerca a la media de muchos días jugados con el motor", () => {
   for (const e of R.ESCENARIOS) {
     const ia = IA.resumen(IA.zonas(e.condiciones));
-    const mc = { DQX1: 0, EQX1: 0 }, n = 15;
+    // la Sierra (EQX1) son pocas rutas y un corte en la A-382 la deja casi entera sin acceso: hacen falta muchos días
+    const mc = { DQX1: 0, EQX1: 0 }, n = 40;
     for (let s = 1; s <= n; s++) {
       const r = R.simular(base, e.condiciones, { seed: 100 + s });
       mc.DQX1 += r.kpis.DQX1.tasaEntrega / n; mc.EQX1 += r.kpis.EQX1.tasaEntrega / n;

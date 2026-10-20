@@ -49,6 +49,7 @@
 .mp-legend .mp-ramp-lbl { font-family: var(--ds-font-mono); font-size: 11px; color: var(--ds-fg-muted); }
 .mp-cut { display: inline-block; width: 16px; height: 0; border-top: 3px solid var(--ds-bad); }
 .mp-flood { display: inline-block; width: 16px; height: 0; border-top: 2px dashed var(--ds-c); }
+.mp-otra { display: inline-block; width: 14px; height: 10px; border-radius: 2px; border: 1px solid var(--ds-line); background: repeating-linear-gradient(135deg, var(--ds-line) 0 1px, transparent 1px 4px); }
 .mp-van { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--ds-fg); box-shadow: 0 0 0 2px var(--ds-accent); }
 
 .mp-about { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; align-self: start; }

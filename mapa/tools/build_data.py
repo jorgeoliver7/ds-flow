@@ -1,9 +1,8 @@
 """Construye la base geográfica del mapa de reparto de Cádiz.
 
-Une los códigos postales de la provincia con la población del INE, las dos
+Une los códigos postales de la provincia con la población del INE, la
 estación ficticia con sus dos familias de rutas (DQX1 y EQX1) y una red de
-carreteras esquemática, y
-escribe mapa/data/cadiz-base.json, mapa/data/RESUMEN.md y docs/mapa-base.png.
+carreteras esquemática, y escribe mapa/data/cadiz-base.json, mapa/data/RESUMEN.md y docs/mapa-base.png.
 
     python3 -m pip install shapely matplotlib
     python3 mapa/tools/build_data.py
@@ -39,12 +38,20 @@ SOURCES = {
 }
 
 # Una sola estación (la de DS Flow) que reparte dos familias de rutas:
-# DQX1 (Bahía, Jerez, Costa Noroeste y La Janda) y EQX1 (Campo de Gibraltar y
-# Sierra). Ubicación ficticia en un polígono junto a la A-4.
+# DQX1 (Bahía, Jerez, Costa Noroeste y La Janda) y EQX1 (Sierra de Cádiz).
+# Ubicación ficticia en un polígono junto a la A-4.
 ESTACION = {"id": "Estación", "nombre": "Estación DS Flow", "lat": 36.655, "lon": -6.105}
 RUTAS = {
     "DQX1": "Bahía de Cádiz, Jerez, Costa Noroeste y La Janda",
-    "EQX1": "Campo de Gibraltar y Sierra de Cádiz",
+    "EQX1": "Sierra de Cádiz",
+}
+
+# El Campo de Gibraltar lo reparte una estación de Málaga: no es de nuestra
+# estación y en el mapa solo sale como contexto.
+OTRA_ESTACION = {
+    "nombre": "Campo de Gibraltar",
+    "estacion": "Málaga",
+    "ine": ["11004", "11008", "11013", "11021", "11022", "11033", "11035", "11903"],
 }
 
 # Pueblos de fuera de la provincia por los que pasa la ruta más corta a la Sierra.
@@ -158,17 +165,11 @@ def construir_zonas(municipios, atlas):
         p = f["properties"]
         partes[(p["COD_POSTAL"], str(p["CODIGO_INE"]))].append(shape(f["geometry"]).buffer(0))
 
+    # solo los municipios que reparte la estación (municipios.csv)
     zonas = []
     for (codigo, ine), geoms in partes.items():
-        geom = unary_union(geoms)
-        zonas.append({"cp": codigo, "ine": ine, "geom": geom})
-
-    # El dataset de códigos postales es anterior a la segregación de
-    # San Martín del Tesorillo (2018): sus zonas salen como Jimena.
-    tesorillo = atlas["11903"]["geom"]
-    for z in zonas:
-        if z["ine"] == "11021" and tesorillo.contains(z["geom"].representative_point()):
-            z["ine"] = "11903"
+        if ine in municipios:
+            zonas.append({"cp": codigo, "ine": ine, "geom": unary_union(geoms)})
 
     faltan = set(municipios) - {z["ine"] for z in zonas}
     if faltan:
@@ -250,6 +251,8 @@ def contexto(atlas):
             g = shape(f["geometry"]).buffer(0).intersection(BBOX)
             if not g.is_empty:
                 vecinos["Marruecos" if nombre == "Morocco" else "Gibraltar"] = g.simplify(0.002 if nombre == "Morocco" else 0.0002)
+    otra = unary_union([atlas[ine]["geom"] for ine in OTRA_ESTACION["ine"]]).intersection(BBOX)
+    vecinos[OTRA_ESTACION["nombre"]] = otra.simplify(0.002, preserve_topology=True)
     return vecinos
 
 
@@ -311,6 +314,7 @@ def main():
         },
         "estacion": ESTACION,
         "rutas": [{"id": k, "zona": v} for k, v in RUTAS.items()],
+        "otra_estacion": {"zona": OTRA_ESTACION["nombre"], "estacion": OTRA_ESTACION["estacion"]},
         "municipios": [
             {
                 "ine": m["ine"],
@@ -398,11 +402,11 @@ def resumen(base):
         "",
         "## Cómo se ha construido",
         "",
-        f"- **Zonas**: cada código postal dentro de su municipio ({len(zonas)} zonas). San Martín del Tesorillo se separa de Jimena con el contorno del IGN, porque el dataset de códigos postales es anterior a 2018.",
+        f"- **Zonas**: cada código postal dentro de su municipio ({len(zonas)} zonas).",
         "- **Población**: la del municipio en el Censo 2021 del INE, repartida entre sus códigos postales con más peso a los pequeños (cascos urbanos) que a los grandes (campo). Es una estimación: el INE no publica población por código postal.",
-        "- **Estación y rutas**: una sola estación ficticia junto a la A-4, entre Jerez y El Puerto, que reparte dos familias de rutas: DQX1 (Bahía, Jerez, Costa Noroeste y La Janda) y EQX1 (Campo de Gibraltar y Sierra). Los nombres son inventados.",
+        "- **Estación y rutas**: una sola estación ficticia junto a la A-4, entre Jerez y El Puerto, que reparte dos familias de rutas: DQX1 (Bahía, Jerez, Costa Noroeste y La Janda) y EQX1 (Sierra de Cádiz). Los nombres son inventados. El Campo de Gibraltar lo reparte una estación de Málaga y en el mapa solo aparece como contexto.",
         "- **Carreteras**: red esquemática entre pueblos (`carreteras.csv`), con rodeo y velocidad media por tipo de vía. Los tiempos son de una furgoneta sin tráfico ni paradas.",
-        "- **Riesgo de inundación y lluvia** (`municipios.csv`): valores ilustrativos inspirados en ríos y episodios conocidos (Guadalete, Iro, Barbate, La Janda, Guadiaro, Palmones, Grazalema). No es cartografía oficial.",
+        "- **Riesgo de inundación y lluvia** (`municipios.csv`): valores ilustrativos inspirados en ríos y episodios conocidos (Guadalete, Iro, Barbate, La Janda, Majaceite, Grazalema). No es cartografía oficial.",
         "",
     ]
     with open(OUT_MD, "w", encoding="utf-8") as f:

@@ -20,21 +20,16 @@
   function crear(base, modelo) {
     const prep = DSReparto.preparar(base);
     const rasgosZona = base.zonas.map((z) => DSReparto.rasgosZona(base, z));
-    // peso de cada zona en el volumen de su familia (lo mismo que reparte el motor, sin el ruido del día)
-    const peso = new Map();
-    for (const fam of Object.keys(DSReparto.P.familias)) {
-      const zs = prep.zonas.filter((zp) => zp.z.rutas === fam);
-      const sum = zs.reduce((a, zp) => a + zp.peso, 0);
-      const F = DSReparto.P.familias, totalRutas = Object.values(F).reduce((a, f) => a + f.rutas, 0);
-      zs.forEach((zp) => peso.set(zp.z.id, ((DSReparto.P.paquetes * F[fam].rutas) / totalRutas) * (zp.peso / sum)));
-    }
+    // paquetes de cada zona en un día normal (lo mismo que reparte el motor, sin el ruido del día)
+    const sumPesos = prep.zonas.reduce((a, zp) => a + zp.peso, 0);
+    const peso = new Map(prep.zonas.map((zp) => [zp.z.id, (DSReparto.P.paquetes * zp.peso) / sumPesos]));
     const dia = (c) => DSReparto.RASGOS_DIA.map((k) => (c[k] == null ? DSReparto.NORMAL[k] : c[k]));
 
     // Predicción por zona: tasa de entrega esperada, la de un día malo (p10) y fallidos
     function zonas(condiciones, opts = {}) {
       const c = { ...DSReparto.NORMAL, ...condiciones }, d = dia(c);
       const familias = opts.familias || Object.keys(DSReparto.P.familias);
-      return base.zonas.map((z, i) => {
+      const zs = base.zonas.map((z, i) => {
         const x = rasgosZona[i].concat(d);
         const entrega = clamp01(predecir(modelo.modelos.entrega, x));
         const activa = familias.includes(z.rutas);
@@ -46,17 +41,27 @@
           fallidos: clamp01(predecir(modelo.modelos.fallidos, x)),
         };
       });
+      zs.dia = d;  // para el día malo de cada familia en resumen()
+      return zs;
     }
 
-    // Agregado por familia: tasas ponderadas por paquetes
+    // Agregado por familia: tasas ponderadas por paquetes. El día malo de una familia
+    // sale de su propio modelo (los días malos de sus zonas no caen todos a la vez).
     function resumen(zs) {
       const out = {};
+      const activas = new Set(zs.filter((z) => z.activa).map((z) => z.rutas));
+      const diaMalo = (fam) => {
+        // con una sola familia en juego, el total es esa familia
+        const f = fam === "total" && activas.size === 1 ? [...activas][0] : fam;
+        return predecir(modelo.dia_malo, zs.dia.concat([f === "EQX1" ? 1 : 0, f === "total" ? 1 : 0]));
+      };
       for (const fam of ["total", ...Object.keys(DSReparto.P.familias)]) {
         const sel = zs.filter((z) => z.activa && (fam === "total" || z.rutas === fam));
         const paq = sel.reduce((a, z) => a + z.paquetes, 0);
         const m = (k) => (paq ? sel.reduce((a, z) => a + z[k] * z.paquetes, 0) / paq : 0);
         const entrega = m("entrega");
-        out[fam] = { paquetes: paq, entrega, p10: m("p10"), fallidos: m("fallidos"), noEntregados: Math.round(paq * (1 - entrega)) };
+        const p10 = paq && zs.dia ? Math.min(entrega, clamp01(diaMalo(fam))) : m("p10");
+        out[fam] = { paquetes: paq, entrega, p10, fallidos: m("fallidos"), noEntregados: Math.round(paq * (1 - entrega)) };
       }
       return out;
     }
