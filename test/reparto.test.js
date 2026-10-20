@@ -23,7 +23,7 @@ test("no se pierde ningún paquete: en cada zona, paquetes = entregados + fallid
   }
 });
 
-test("la misma semilla da el mismo día", () => {
+test("la misma semilla da el mismo turno", () => {
   const a = R.simular(base, { lluvia: 0.6, inundacion: 0.5 }, { seed: 9 });
   const b = R.simular(base, { lluvia: 0.6, inundacion: 0.5 }, { seed: 9 });
   assert.deepEqual(a.kpis, b.kpis);
@@ -77,8 +77,34 @@ test("la huelga quita furgonetas y el refuerzo las añade", () => {
   assert.ok(media({ volumen: 1.5, refuerzo: 0.3 }, "tasaEntrega") > media({ volumen: 1.5 }, "tasaEntrega"));
 });
 
-test("se puede jugar una sola familia de rutas", () => {
+test("se puede simular una sola familia de rutas", () => {
   const r = R.simular(base, {}, { seed: 1, familias: ["DQX1"] });
   assert.ok(r.rutas.every((x) => x.familia === "DQX1"));
   assert.ok(r.zonas.filter((z) => z.rutas === "EQX1").every((z) => z.paquetes === 0));
+});
+
+test("la flota: cada ruta acaba sin problemas o con un motivo, y se sabe si faltan o sobran furgonetas", () => {
+  for (const e of R.ESCENARIOS) {
+    const f = R.simular(base, e.condiciones, { seed: 4 }).kpis.total.flota;
+    assert.equal(f.aTiempo + f.conProblemas, f.rutas, e.id);
+    assert.equal(f.porTiempo + f.porAgua, f.conProblemas, e.id);
+    assert.ok(!(f.faltan > 0 && f.sobran > 0), `${e.id}: no pueden faltar y sobrar a la vez`);
+  }
+  const normal = R.simular(base, {}, { seed: 4 }).kpis.total.flota;
+  assert.equal(normal.faltan, 0, "en un día normal no faltan furgonetas");
+  const huelga = R.simular(base, { huelga: 0.35 }, { seed: 4 }).kpis.total.flota;
+  assert.equal(huelga.sinConductor, 42, "el 35% de 120 rutas se queda sin conductor");
+  assert.ok(huelga.faltan > 10, "con huelga faltan furgonetas");
+  const flood = R.simular(base, { lluvia: 1, inundacion: 0.8 }, { seed: 4 }).kpis.total.flota;
+  assert.ok(flood.porAgua > 0, "con flash flood hay rutas frenadas por el agua");
+  const poco = R.simular(base, { volumen: 0.6 }, { seed: 4 }).kpis.total.flota;
+  assert.ok(poco.sobran >= 10, "con poco volumen sobran furgonetas");
+});
+
+test("con los retrasos de DS Flow, cada oleada sale a su hora", () => {
+  const retrasos = [0, 0, 20, 0, 0, 45];
+  const r = R.simular(base, {}, { seed: 2, retrasos });
+  for (const x of r.rutas) assert.equal(x.salida, x.oleada + retrasos[x.ola] + R.P.carga, x.id);
+  assert.deepEqual(R.OLEADAS, ["06:30", "06:45", "07:00", "07:15", "07:30", "07:45"]);
+  assert.ok(r.rutas.filter((x) => x.familia === "EQX1").every((x) => x.ola === 0), "EQX1 sale en la primera oleada");
 });

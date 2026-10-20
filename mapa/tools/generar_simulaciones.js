@@ -1,10 +1,10 @@
 // Genera los datos de entrenamiento del modelo: miles de días con condiciones al
-// azar, jugados con el motor de reparto, una fila por zona y día.
+// azar, simulados con el motor de reparto, una fila por zona y día.
 //
 //   node mapa/tools/generar_simulaciones.js [dias] [salida.csv] [repeticiones]
 //
 // Por defecto 6000 días en mapa/tools/.cache/simulaciones.csv (no se sube al repo).
-// Con repeticiones > 1 juega cada día varias veces con distinta semilla (Monte Carlo),
+// Con repeticiones > 1 simula cada día varias veces con distinta semilla (Monte Carlo),
 // para comprobar el modelo contra la media real del motor.
 const fs = require("fs");
 const path = require("path");

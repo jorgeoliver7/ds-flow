@@ -35,6 +35,8 @@
   font-size: 14px; color: var(--ds-fg-muted);
 }
 .mp-loading[hidden] { display: none; }
+.mp-zoom { position: absolute; top: 10px; right: 10px; display: grid; gap: 6px; z-index: 1; }
+.mp-zoom .ds-icon { width: 32px; height: 32px; background: var(--ds-bg-2); color: var(--ds-fg); font-size: 16px; line-height: 1; box-shadow: 0 4px 14px var(--ds-shadow); }
 .mp-tip {
   position: absolute; pointer-events: none; z-index: 2;
   padding: 8px 11px; border-radius: 12px; max-width: 240px;
@@ -51,6 +53,46 @@
 .mp-flood { display: inline-block; width: 16px; height: 0; border-top: 2px dashed var(--ds-c); }
 .mp-otra { display: inline-block; width: 14px; height: 10px; border-radius: 2px; border: 1px solid var(--ds-line); background: repeating-linear-gradient(135deg, var(--ds-line) 0 1px, transparent 1px 4px); }
 .mp-van { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--ds-fg); box-shadow: 0 0 0 2px var(--ds-accent); }
+
+.mp-van--stop { background: var(--ds-a); box-shadow: 0 0 0 1.5px var(--ds-bg-2), 0 0 0 2.5px var(--ds-a); }
+.mp-van--back { background: transparent; box-shadow: inset 0 0 0 2px var(--ds-a); }
+
+/* la flota */
+.mp-fleet h5 { font-size: 12.5px; font-weight: 600; margin: 0 0 6px; }
+.mp-fleet h5 small { font-weight: 400; color: var(--ds-fg-muted); }
+#mp-fleet { display: grid; gap: 10px; }
+.mp-fleet-bar { display: flex; height: 10px; border-radius: 5px; overflow: hidden; background: var(--ds-line); gap: 2px; }
+.mp-fleet-bar i { min-width: 2px; }
+.mp-fleet-bar .is-wait { background: var(--ds-line); }
+.mp-fleet-bar .is-load, .mp-fleet-keys .is-load { background: var(--ds-warn); }
+.mp-fleet-bar .is-out, .mp-fleet-keys .is-out { background: var(--ds-accent); }
+.mp-fleet-bar .is-back, .mp-fleet-keys .is-back { background: var(--ds-ok); }
+.mp-fleet-bar .is-off, .mp-fleet-keys .is-off { background: var(--ds-fg-muted); }
+.mp-fleet-keys { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 12px; color: var(--ds-fg-soft); }
+.mp-fleet-keys i { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 5px; }
+.mp-fleet-chart { position: relative; padding-bottom: 16px; }
+.mp-fleet-chart svg { display: block; width: 100%; height: 64px; }
+.mp-fleet-chart path.is-out { fill: color-mix(in oklab, var(--ds-accent) 55%, transparent); }
+.mp-fleet-chart path.is-load { fill: color-mix(in oklab, var(--ds-warn) 70%, transparent); }
+.mp-fleet-chart path.is-back-line { fill: none; stroke: var(--ds-ok); stroke-width: 2; }
+.mp-fleet-chart line.is-now { stroke: var(--ds-fg); stroke-width: 1.2; }
+.mp-fleet-axis { position: absolute; left: 0; right: 0; bottom: 0; height: 14px; }
+.mp-fleet-axis span { position: absolute; transform: translateX(-50%); font-family: var(--ds-font-mono); font-size: 10.5px; color: var(--ds-fg-muted); }
+.mp-fleet-kpis .ds-kpi strong { font-size: 17px; }
+.mp-fleet-verdict { margin: 0; padding: 0; list-style: none; }
+.mp-fleet-list { display: grid; gap: 4px; }
+.mp-fleet-list button {
+  display: grid; grid-template-columns: 78px minmax(0, 1fr) auto; gap: 8px; align-items: center; text-align: left;
+  padding: 6px 10px; border-radius: 10px; border: 1px solid var(--ds-line); background: transparent; cursor: pointer;
+  font-size: 12px; color: var(--ds-fg-soft);
+}
+.mp-fleet-list button b { font-family: var(--ds-font-mono); font-weight: 500; color: var(--ds-fg); }
+.mp-fleet-list button span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mp-fleet-list button:hover, .mp-fleet-list button[aria-pressed=true] { border-color: var(--ds-accent); }
+.mp-fleet-route { padding-top: 10px; border-top: 1px solid var(--ds-line); }
+.mp-fleet-route h5 { display: flex; align-items: center; gap: 6px; font-size: 15px; }
+.mp-fleet-route h5 .ds-icon { margin-left: auto; width: 26px; height: 26px; font-size: 15px; }
+.mp-fleet-hint { margin: 0; }
 
 .mp-about { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; align-self: start; }
 .mp-about p { font-size: 13px; line-height: 1.55; color: var(--ds-fg-soft); }

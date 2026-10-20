@@ -4,7 +4,7 @@ Generado con `python3 mapa/tools/entrenar_modelo.py`.
 
 ## Qué hace
 
-El motor de reparto (`mapa/reparto.js`) juega un día rutas por rutas, y cada día sale distinto: la tormenta cae más en una comarca que en otra y la inundación corta unos tramos u otros. Para saber qué esperar con unas condiciones hay que jugar muchos días. El modelo aprende de 12.000 días simulados (1.116.000 filas de zona y día) y predice al instante, para cada una de las zonas:
+El motor de reparto (`mapa/reparto.js`) simula un turno ruta a ruta, y cada turno sale distinto: la tormenta cae más en una comarca que en otra y la inundación corta unos tramos u otros. Para saber qué esperar con unas condiciones hay que simular muchos turnos. El modelo aprende de 12.000 días simulados (1.116.000 filas de zona y día) y predice al instante, para cada una de las zonas:
 
 - la **tasa de entrega esperada**,
 - la tasa de entrega en un **día malo** (percentil 10: nueve de cada diez días salen mejor),
@@ -22,7 +22,7 @@ Con días que el modelo no ha visto (el 20% de los días, separados por día, no
 | R² por zona y día | 0,818 | 0,728 | 0 |
 | Error medio por familia de rutas y día | 1,9 puntos | 4,1 puntos | |
 
-Un día concreto lleva su azar (qué tramos se cortan, cómo rinde cada conductor), así que parte de ese error no se puede predecir. Contra la **media de 30 días jugados con las mismas condiciones** (60 condiciones distintas), que es lo que el modelo intenta estimar, el error medio por zona baja a **1,7 puntos**.
+Un día concreto lleva su azar (qué tramos se cortan, cómo rinde cada conductor), así que parte de ese error no se puede predecir. Contra la **media de 30 turnos simulados con las mismas condiciones** (60 condiciones distintas), que es lo que el modelo intenta estimar, el error medio por zona baja a **1,7 puntos**.
 
 El percentil 10 de cada zona queda por encima del resultado real en el 11% de esos días (lo ideal es el 10%). El día malo de una familia de rutas no es la suma de los días malos de sus zonas, porque no caen todos a la vez: lo da un cuarto modelo, entrenado con una fila por familia y día, que queda por encima del resultado real en el 17% de los días.
 

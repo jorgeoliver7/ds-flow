@@ -1,7 +1,7 @@
 // Motor del reparto en la provincia de Cádiz: lo que pasa después de la estación.
 // Con la base geográfica (mapa/data/cadiz-base.json) y unas condiciones (volumen,
 // lluvia, inundación, huelga...) planifica las rutas DQX1 y EQX1 del día y las
-// juega en la calle. No toca el DOM, así que se prueba en Node (ver test/).
+// simula en la calle. No toca el DOM, así que se prueba en Node (ver test/).
 (function (root) {
   "use strict";
 
@@ -202,7 +202,12 @@
     return rutas.map((r, k) => ({ familia, n: k + 1, partes: r.partes, plan: hi }));
   }
 
-  // Juega un día de reparto. opts: { seed, familias: ["DQX1","EQX1"], paquetes, rutas: { EQX1, DQX1 } }
+  // Las oleadas de la estación en orden (las mismas seis que en DS Flow): EQX1 sale en la primera
+  const OLEADAS = [...new Set(Object.values(P.familias).flatMap((f) => f.oleadas))].sort();
+
+  // Simula un turno de reparto. opts: { seed, familias: ["DQX1","EQX1"], paquetes,
+  // retrasos: minutos de retraso de cada oleada (en el orden de OLEADAS) tal como salieron en DS Flow;
+  // sin ellos, todas salen con el retraso medio de las condiciones }
   function simular(base, condiciones, opts = {}) {
     const C = { ...NORMAL, ...condiciones };
     const prep = preparar(base);
@@ -240,7 +245,7 @@
     const paquetesZona = pesos.map((w) => Math.round((totalPaq * w) / sumPesos));
 
     // 4. Planificación y reparto, familia a familia
-    const rutas = [];
+    const rutas = [], sinConductor = {};
     const zonas = prep.zonas.map((zp) => ({
       id: zp.z.id, rutas: zp.z.rutas, paquetes: familias.includes(zp.z.rutas) ? paquetesZona[zp.i] : 0,
       entregados: 0, fallidos: 0, rts: 0, rtsTiempo: 0, rtsInundacion: 0, rtsIncomunicada: 0,
@@ -264,13 +269,15 @@
       // si no hay furgonetas para la familia, todo vuelve a la estación
       if (!plan.length) prep.zonas.forEach((zp, i) => { if (zp.z.rutas === fam) { zonas[i].rts += zonas[i].paquetes; zonas[i].rtsTiempo += zonas[i].paquetes; } });
       plan.forEach((ruta, k) => {
-        const oleada = hhmm(F.oleadas[Math.min(F.oleadas.length - 1, Math.floor((k * F.oleadas.length) / plan.length))]);
-        const salida = oleada + C.retraso + P.carga;
+        const hora = F.oleadas[Math.min(F.oleadas.length - 1, Math.floor((k * F.oleadas.length) / plan.length))];
+        const ola = OLEADAS.indexOf(hora), oleada = hhmm(hora);
+        const retraso = opts.retrasos && opts.retrasos[ola] != null ? opts.retrasos[ola] : C.retraso;
+        const salida = oleada + retraso + P.carga;
         const limite = oleada + P.jornada;
         const ritmo = ruido(rand, 0.08);  // el día de este conductor
         let t = salida, kmRuta = 0, pos = null, ultima = null;
         // partes: el momento en que la furgoneta trabaja cada zona, para animar el día en el mapa
-        const res = { id: `${fam}-${String(ruta.n).padStart(3, "0")}`, familia: fam, salida, zonas: [], partes: [], camino: [], caminoVuelta: [], paquetes: 0, entregados: 0, fallidos: 0, rts: 0 };
+        const res = { id: `${fam}-${String(ruta.n).padStart(3, "0")}`, familia: fam, ola, oleada, salida, limite, zonas: [], partes: [], camino: [], caminoVuelta: [], paquetes: 0, entregados: 0, fallidos: 0, rts: 0, rtsTiempo: 0, rtsAgua: 0 };
         const primera = ruta.partes[0].zp;
         const ida = hoy.get(primera.z.municipio);
         if (ida) { t += ida.min + localMin(primera, lluviaZona(primera)); kmRuta += ida.km + primera.localKm; res.camino = ida.tramos; }
@@ -281,7 +288,7 @@
           const paq = Math.round(paquetesZona[zp.i] * Math.min(1, desde + frac)) - Math.round(paquetesZona[zp.i] * desde);
           res.zonas.push(zp.z.id); res.paquetes += paq; zr.furgonetas += 1;
           const acceso = hoy.get(zp.z.municipio);
-          if (!acceso || !ida) { zr.rts += paq; zr.rtsIncomunicada += paq; res.rts += paq; continue; }
+          if (!acceso || !ida) { zr.rts += paq; zr.rtsIncomunicada += paq; res.rts += paq; res.rtsAgua += paq; continue; }
           const lluvia = lluviaZona(zp);
           if (pos) { const d = km(pos, zp.z.centro) * P.rodeoSalto; kmRuta += d; t += (d / (P.saltoKmh * (1 - 0.18 * lluvia))) * 60; }
           pos = zp.z.centro;
@@ -305,6 +312,7 @@
           zr.rts += resto - intentados + rtsInund; zr.rtsTiempo += resto - intentados; zr.rtsInundacion += rtsInund;
           if (hechas > 0) zr.ultima = Math.max(zr.ultima || 0, t);
           res.entregados += intentados - fallidos; res.fallidos += fallidos; res.rts += resto - intentados + rtsInund;
+          res.rtsTiempo += resto - intentados; res.rtsAgua += rtsInund;
         }
         const ultimaZona = ruta.partes[ruta.partes.length - 1].zp;
         const vuelta = hoy.get(ultimaZona.z.municipio);
@@ -313,8 +321,12 @@
         res.vuelta = t; res.ultima = ultima; res.km = +kmRuta.toFixed(1);
         res.horas = (t - salida) / 60;
         res.sobrecargada = res.rts > 0.02 * res.paquetes;
+        // cómo le fue al conductor: sin tiempo para todo, el agua no le dejó llegar, o volvió con margen
+        res.holgura = limite - t;
+        res.motivo = !res.sobrecargada ? null : res.rtsAgua >= res.rtsTiempo ? "agua" : "tiempo";
         rutas.push(res);
       });
+      sinConductor[fam] = Math.round(F.rutas * (1 + C.refuerzo)) - n;
     }
 
     // 5. Métricas del día, en total y por familia
@@ -331,8 +343,28 @@
         costePaquete: s("entregados") ? +((horas * P.coste.hora + km * P.coste.km) / s("entregados")).toFixed(2) : null,
         co2: Math.round(km * P.co2km),
         ultimaMedia: rs.filter((r) => r.ultima).length ? rs.filter((r) => r.ultima).reduce((a, r) => a + r.ultima, 0) / rs.filter((r) => r.ultima).length : null,
+        flota: flota(rs, s("rtsTiempo")),
       };
     };
+    // ¿Sobraron o faltaron furgonetas? Faltan las que harían falta para lo que volvió por falta de
+    // tiempo (lo que vuelve por el agua no lo arregla otra furgoneta). Sobran las que caben en el
+    // tiempo libre de las rutas, contando el margen normal con que se planifican.
+    const flota = (rs, rtsTiempo) => {
+      const conProblemas = rs.filter((r) => r.sobrecargada);
+      const paqRuta = rs.length ? rs.reduce((a, r) => a + r.entregados, 0) / rs.length : 0;
+      const margen = P.jornada * (1 - P.planificada);
+      const libre = rs.reduce((a, r) => a + (r.sobrecargada ? 0 : Math.max(0, r.holgura - margen)), 0);
+      return {
+        rutas: rs.length, aTiempo: rs.length - conProblemas.length, conProblemas: conProblemas.length,
+        porTiempo: conProblemas.filter((r) => r.motivo === "tiempo").length, porAgua: conProblemas.filter((r) => r.motivo === "agua").length,
+        sinConductor: familiasRs(rs).reduce((a, f) => a + (sinConductor[f] || 0), 0),
+        faltan: paqRuta > 0 && rtsTiempo > 0.005 * rs.reduce((a, r) => a + r.paquetes, 0) ? Math.ceil(rtsTiempo / paqRuta) : 0,
+        sobran: Math.floor(libre / (P.jornada * P.planificada)),
+        horasMedia: rs.length ? rs.reduce((a, r) => a + r.horas, 0) / rs.length : 0,
+        paqRuta,
+      };
+    };
+    const familiasRs = (rs) => [...new Set(rs.map((r) => r.familia))];
     const kpis = { total: resumen(zonas.filter((z) => familias.includes(z.rutas)), rutas) };
     familias.forEach((f) => (kpis[f] = resumen(zonas.filter((z) => z.rutas === f), rutas.filter((r) => r.familia === f))));
     return { condiciones: C, zonas, rutas, cortados: [...cortados], kpis };
@@ -353,7 +385,7 @@
   }
   const RASGOS_DIA = ["volumen", "lluvia", "inundacion", "huelga", "refuerzo", "retraso"];
 
-  const api = { P, NORMAL, CONDICIONES, ESCENARIOS, RASGOS_ZONA, RASGOS_DIA, rng, preparar, simular, rasgosZona, reloj, hhmm };
+  const api = { P, NORMAL, CONDICIONES, ESCENARIOS, OLEADAS, RASGOS_ZONA, RASGOS_DIA, rng, preparar, simular, rasgosZona, reloj, hhmm };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.DSReparto = api;
 })(typeof window !== "undefined" ? window : globalThis);

@@ -27,7 +27,7 @@
       title: "La IA responde al instante",
       body: (a) => {
         const r = a.res();
-        return `Un modelo de gradient boosting, entrenado con 12.000 días jugados por el motor, predice la entrega de cada zona y la de un día malo (nueve de cada diez salen mejor). Con este flash flood: ${a.pct(r.total.entrega)} de entrega prevista y ${a.pct(r.total.p10)} en un día malo. La Sierra (EQX1) sufre más: ${a.pct(r.EQX1.entrega)} frente a ${a.pct(r.DQX1.entrega)} de DQX1.`;
+        return `Un modelo de gradient boosting, entrenado con 12.000 turnos simulados por el motor, predice la entrega de cada zona y la de un día malo (nueve de cada diez salen mejor). Con este flash flood: ${a.pct(r.total.entrega)} de entrega prevista y ${a.pct(r.total.p10)} en un día malo. La Sierra (EQX1) sufre más: ${a.pct(r.EQX1.entrega)} frente a ${a.pct(r.DQX1.entrega)} de DQX1.`;
       },
     },
     {
@@ -57,13 +57,24 @@
     {
       target: ".mp-map-wrap",
       before: (a) => a.modo("dia"),
-      title: "Jugar el día",
-      body: "Ahora el motor juega el día entero: las 120 furgonetas salen por oleadas, los tramos cortados por el agua se marcan en rojo y el mapa se llena según lo entregado. \"Otro día\" lo repite con las mismas condiciones y otra suerte; la IA predice la media de muchos días así.",
+      title: "Simular el turno",
+      body: "Ahora el motor simula el turno de reparto: las furgonetas cargan en la estación, salen por oleadas, recorren sus zonas parada a parada por las calles y vuelven (huecas, de vuelta). Toca una furgoneta para seguir su ruta. \"Otro turno\" lo repite con las mismas condiciones y otra suerte; la IA predice la media de muchos turnos así.",
+    },
+    {
+      target: "#mp-fleet-card",
+      before: (a) => a.alFinal(),
+      title: "Cómo le ha ido a la flota",
+      body: (a) => {
+        const f = a.flota();
+        const veredicto = f.faltan > 0 ? `faltaron unas ${f.faltan} furgonetas` : f.sobran > 0 ? `sobraron unas ${f.sobran} furgonetas` : "las furgonetas fueron justas";
+        const agua = f.porAgua > f.porTiempo ? `, pero ${f.porAgua} de las ${f.conProblemas} rutas con problemas los tienen por el agua y eso no se arregla con más furgonetas` : "";
+        return `Al volver cada furgoneta se sabe cómo le fue al conductor: ${f.aTiempo} rutas sin problemas y ${f.conProblemas} con paquetes que vuelven, por falta de tiempo o por el agua. Con este flash flood ${veredicto}${agua}. La gráfica enseña cómo salen por oleadas y cómo vuelven por la tarde.`;
+      },
     },
     {
       target: ".ds-back", spotPad: 8,
       title: "Enlazado con DS Flow",
-      body: "El informe de fin de turno de DS Flow abre este mapa con lo que salió de la estación: los paquetes, el retraso medio de las oleadas y el rollover. Lo que pasa en el sort se ve aquí en la calle.",
+      body: "El informe de fin de turno de DS Flow abre este mapa simulando el reparto con lo que salió de la estación: los paquetes, el rollover y la hora a la que salió cada oleada. Si una oleada salió tarde del sort, aquí sus furgonetas salen tarde y se ve en qué rutas no da tiempo.",
       final: [
         { label: "Seguir en el mapa", run: () => {} },
         { label: "Abrir DS Flow", out: true, run: (a) => a.dsflow() },

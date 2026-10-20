@@ -120,13 +120,15 @@
       paquetes: S.over ? S.dispatched : S.plan.volume,
       retraso: salidas.length ? Math.round(salidas.reduce((a, w) => a + Math.max(0, w.depart - w.deadline), 0) / salidas.length) : 0,
       rollover: m.rollover,
+      // minutos de retraso de cada oleada, para que en el mapa las furgonetas salgan a la misma hora
+      oleadas: waves.map((w) => (w.depart == null ? "" : Math.max(0, Math.round(w.depart - w.deadline)))),
     };
     return { scenario: sc ? sc.name : "Turno", seed: sc ? sc.seed : null, over: S.over, now: clock(S.t), kpis, procs, waves, cycle, quality: q, good, bad, clock, people, reparto };
   }
 
-  // Enlace al mapa de reparto en Cádiz con el resultado del turno
+  // Enlace al mapa de reparto en Cádiz con el resultado del turno: se abre simulando el reparto
   function mapaUrl(r, base = "mapa/") {
-    const q = new URLSearchParams({ desde: "dsflow", turno: r.scenario, paquetes: r.reparto.paquetes, retraso: r.reparto.retraso, rollover: r.reparto.rollover });
+    const q = new URLSearchParams({ desde: "dsflow", turno: r.scenario, paquetes: r.reparto.paquetes, retraso: r.reparto.retraso, rollover: r.reparto.rollover, oleadas: r.reparto.oleadas.join(","), modo: "dia" });
     return base + "?" + q.toString();
   }
 

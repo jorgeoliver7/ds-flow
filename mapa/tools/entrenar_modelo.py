@@ -174,7 +174,7 @@ def main():
     fam_mae = mae(agg["pe"] / agg["paquetes"], agg["ye"] / agg["paquetes"])
     fam_mae_lineal = mae(agg["pl"] / agg["paquetes"], agg["ye"] / agg["paquetes"])
 
-    # Contra la media de 30 días jugados con las mismas condiciones (Monte Carlo)
+    # Contra la media de 30 turnos simulados con las mismas condiciones (Monte Carlo)
     mc = pd.read_csv(MONTECARLO)
     mc_media = mc.groupby(["dia", "zona"]).agg(**{**{r: (r, "first") for r in RASGOS}, "y": ("tasa_entrega", "mean"), "paquetes": ("paquetes", "mean")}).reset_index()
     mc_p = np.clip(modelos["entrega"].predict(mc_media[RASGOS].to_numpy()), 0, 1)
@@ -253,7 +253,7 @@ def escribir_md(m):
         "",
         "## Qué hace",
         "",
-        f"El motor de reparto (`mapa/reparto.js`) juega un día rutas por rutas, y cada día sale distinto: la tormenta cae más en una comarca que en otra y la inundación corta unos tramos u otros. Para saber qué esperar con unas condiciones hay que jugar muchos días. El modelo aprende de {miles(m['dias'])} días simulados ({miles(m['filas_entrenamiento'] + m['filas_prueba'])} filas de zona y día) y predice al instante, para cada una de las zonas:",
+        f"El motor de reparto (`mapa/reparto.js`) simula un turno ruta a ruta, y cada turno sale distinto: la tormenta cae más en una comarca que en otra y la inundación corta unos tramos u otros. Para saber qué esperar con unas condiciones hay que simular muchos turnos. El modelo aprende de {miles(m['dias'])} días simulados ({miles(m['filas_entrenamiento'] + m['filas_prueba'])} filas de zona y día) y predice al instante, para cada una de las zonas:",
         "",
         "- la **tasa de entrega esperada**,",
         "- la tasa de entrega en un **día malo** (percentil 10: nueve de cada diez días salen mejor),",
@@ -271,7 +271,7 @@ def escribir_md(m):
         f"| R² por zona y día | {decimal(e['r2'], 3)} | {decimal(e['r2_lineal'], 3)} | 0 |",
         f"| Error medio por familia de rutas y día | {pct(f['mae'])} | {pct(f['mae_lineal'])} | |",
         "",
-        f"Un día concreto lleva su azar (qué tramos se cortan, cómo rinde cada conductor), así que parte de ese error no se puede predecir. Contra la **media de {mc['repeticiones']} días jugados con las mismas condiciones** ({mc['dias']} condiciones distintas), que es lo que el modelo intenta estimar, el error medio por zona baja a **{pct(mc['mae'])}**.",
+        f"Un día concreto lleva su azar (qué tramos se cortan, cómo rinde cada conductor), así que parte de ese error no se puede predecir. Contra la **media de {mc['repeticiones']} turnos simulados con las mismas condiciones** ({mc['dias']} condiciones distintas), que es lo que el modelo intenta estimar, el error medio por zona baja a **{pct(mc['mae'])}**.",
         "",
         f"El percentil 10 de cada zona queda por encima del resultado real en el {mc['cobertura_p10'] * 100:.0f}% de esos días (lo ideal es el 10%). El día malo de una familia de rutas no es la suma de los días malos de sus zonas, porque no caen todos a la vez: lo da un cuarto modelo, entrenado con una fila por familia y día, que queda por encima del resultado real en el {mc['cobertura_p10_familia'] * 100:.0f}% de los días.",
         "",

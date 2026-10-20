@@ -88,7 +88,7 @@
       target: "#ds-report-btn", spotPad: 8,
       before: (a) => a.view("station"),
       title: "Ya lo tienes",
-      body: "Al acabar el turno se abre un informe con lo que salió bien y lo que hay que mejorar, la productividad y el coste, y se puede comparar con otro escenario. Desde el informe, \"Ver el reparto en Cádiz\" lleva lo que salió de la estación al mapa de la provincia, donde sigue el día en la calle. Puedes seguir el turno en pantalla completa o ir directamente al informe.",
+      body: "Al acabar el turno se abre un informe con lo que salió bien y lo que hay que mejorar, la productividad y el coste, y se puede comparar con otro escenario. Desde el informe, \"Ver el reparto en Cádiz\" lleva lo que salió de la estación al mapa de la provincia: las furgonetas salen a la hora en que las despachó cada oleada y se ve cómo les va en la calle. Puedes seguir el turno en pantalla completa o ir directamente al informe.",
       final: true,
     },
   ];
