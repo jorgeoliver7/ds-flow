@@ -995,7 +995,7 @@
       const partes = [];
       if (paq != null) partes.push(`salieron ${n0(paq)} paquetes en furgoneta${paq / R.P.paquetes < 0.5 ? ` (el mapa empieza en ${n0(R.P.paquetes * 0.5)})` : ""}`);
       const tarde = (st.retrasos || []).map((r, k) => [k + 1, r]).filter(([, r]) => r > 0);
-      partes.push(tarde.length ? `${tarde.length === 1 ? "la oleada" : "las oleadas"} ${tarde.map(([k, r]) => `${k} (${Math.round(r)} min)`).join(", ")} salieron tarde`
+      partes.push(tarde.length ? `${tarde.length === 1 ? "la oleada" : "las oleadas"} ${tarde.map(([k, r]) => `${k} (${Math.round(r)} min)`).join(", ")} ${tarde.length === 1 ? "salió" : "salieron"} tarde`
         : st.cond.retraso > 0 ? `las oleadas salieron con ${Math.round(st.cond.retraso)} min de retraso de media` : "las oleadas salieron a su hora");
       const roll = num("rollover");
       if (roll) partes.push(`${n0(roll)} paquetes se quedaron en la estación`);

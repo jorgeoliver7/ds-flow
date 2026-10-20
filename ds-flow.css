@@ -553,6 +553,8 @@ a.ds-btn { display: inline-block; color: inherit; text-decoration: none; }
 .ds-tour-card .ds-eyebrow { color: var(--ds-accent); }
 .ds-tour-act { width: 100%; margin-bottom: 12px; }
 .ds-tour-nav { display: flex; align-items: center; gap: 8px; }
+.ds-tour-final { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+.ds-tour-final .ds-btn { flex: 1 1 auto; padding: 8px 14px; font-size: 13px; }
 .ds-tour-nav .ds-btn { padding: 7px 14px; font-size: 13px; }
 .ds-tour-dots { display: flex; gap: 4px; margin-right: auto; }
 .ds-tour-dots i { width: 6px; height: 6px; border-radius: 50%; background: var(--ds-line); }

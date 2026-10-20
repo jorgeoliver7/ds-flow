@@ -10,7 +10,7 @@ Forma parte del [portfolio de Jorge Acedo](https://jorgeoliver7.github.io/Portfo
 
 ## Cómo contar un turno con la app
 
-**Tour guiado** (botón "Presentar"): recorre un turno de falta de personal en 11 pasos y explica cada parte de la pantalla: el plan del turno, los KPIs, la recomendación (se aplica desde el tour), el planificador, el rastreo de paquetes, el descanso, los high value, las oleadas, la plantilla y el informe. Adelanta el turno hasta la hora de cada paso. Se mueve con las flechas y se sale con Esc.
+**Tour guiado** (botón "Presentar"): recorre un turno de falta de personal en 12 pasos y explica cada parte de la pantalla: el plan del turno, los KPIs, la recomendación (se aplica desde el tour), el planificador, el rastreo de paquetes, el descanso, los high value, las oleadas, la plantilla, el informe y, al final, el mapa del reparto en Cádiz. Adelanta el turno hasta la hora de cada paso. Se mueve con las flechas y se sale con Esc.
 
 1. **Elige un escenario** arriba a la izquierda: noche normal, pico, falta de personal, camión retrasado o tarde (PM), el turno del yard marshall. En la tarde llegan dos camiones antes de las 16:00 (14:30 y 15:30) con carga **para la noche**: se descargan, pero los carros se quedan en la playa sin procesar hasta el sort de la noche (ciclo 1 del día siguiente); en el plano se ven como carros atenuados con "N para la noche". El camión de las 16:00 trae el **same day** (unos 500 paquetes): se descarga al momento, se clasifica y sale en las rutas de las 18:00. Cada uno tiene su semilla, así que sale igual cada vez. También se puede enlazar directamente con `?escenario=pico`.
 2. **Sube la velocidad** a 180× o 600× para ver el turno entero en unos minutos.

@@ -791,6 +791,8 @@
     applyAdvice: () => { const b = document.querySelector('[data-plan="advice"]'); if (b) b.click(); return !!b; },
     trackRandom: () => $("#ds-random").click(),
     present: (on) => setPresent(on),
+    // el mapa de Cádiz simulando el reparto de este turno (lo que lleva salido si aún no ha acabado)
+    mapa: () => { location.href = DSReport.mapaUrl(DSReport.build(E, scenario(), { hourly: hourly() })); },
     // al terminar: el turno hasta el final y su informe
     finish: () => fastForward(Infinity, () => { reportShown = true; openReport(); }),
   });
