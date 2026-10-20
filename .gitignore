@@ -1,6 +1,9 @@
 # Datos reales de una noche: se importan en el navegador y nunca se suben al repo
 *.csv
 !ejemplo-turno.csv
+# fuentes del mapa de Cádiz (inventadas o públicas, sin datos de empresa)
+!mapa/tools/municipios.csv
+!mapa/tools/carreteras.csv
 node_modules/
 mapa/tools/.cache/
 __pycache__/
