@@ -2,7 +2,7 @@
 
 Simulación de un turno de noche en una estación de reparto de última milla, del primer camión a la última furgoneta: unos 26.000 paquetes, un equipo de noche de 30 personas que entra a la 01:00 y descansa de 04:00 a 04:30, 120 rutas en 24 estanterías y 6 oleadas de salida. Se ve cómo se mueve cada paquete por el plano y, a la vez, las métricas con las que se lleva una estación de verdad: hora prevista de fin del sort, rutas a tiempo, productividad por proceso, calidad y un informe al acabar el turno.
 
-**Demo:** https://jorgeoliver7.github.io/ds-flow/
+**Demo:** https://jorgeoliver7.github.io/ds-flow/ · **Mapa de reparto en Cádiz:** https://jorgeoliver7.github.io/ds-flow/mapa/
 
 Forma parte del [portfolio de Jorge Acedo](https://jorgeoliver7.github.io/Portfolio-Website/).
 
@@ -28,6 +28,31 @@ Forma parte del [portfolio de Jorge Acedo](https://jorgeoliver7.github.io/Portfo
 **Modo presentación** (tecla <kbd>P</kbd>, o "Pantalla completa" al final del tour): pantalla completa con el plano y los KPIs principales. La barra espaciadora pausa.
 
 ![Modo presentación durante el pico](docs/presentacion.jpg)
+
+## El reparto en Cádiz: mapa de calor con IA
+
+DS Flow acaba cuando sale la última furgoneta. [`mapa/`](mapa/) sigue el día en la calle: las 120 rutas de la estación por la provincia de Cádiz, zona a zona, con lluvia, flash flood, huelga o un pico de volumen, y un modelo de IA que predice cuánto se entrega en cada código postal y explica por qué.
+
+![Previsión de la IA con un flash flood](docs/mapa-cadiz.jpg)
+
+- **Una estación, dos familias de rutas.** La estación de DS Flow (ficticia, junto a la A-4 entre Jerez y El Puerto) reparte las rutas **DQX1** (Bahía de Cádiz, Jerez, Costa Noroeste y La Janda: 100 rutas de 06:45 a 07:45) y **EQX1** (Sierra de Cádiz: 20 rutas en la primera oleada, a las 06:30, porque son las que más lejos van). El Campo de Gibraltar lo reparte una estación de Málaga y en el mapa sale rayado.
+- **Previsión IA.** Cada zona se colorea con la entrega que prevé un modelo de gradient boosting entrenado con 12.000 turnos simulados por el motor. Al mover una condición responde al instante con la entrega esperada, la de un día malo (percentil 10) y las entregas fallidas. Los **valores de Shapley** reparten la caída frente a un día normal entre las condiciones (el flash flood resta tanto, la lluvia tanto), y la **recomendación** usa el mismo modelo para probar soluciones: cuántas furgonetas de refuerzo harían falta para llegar al 95% o si el problema son las carreteras cortadas.
+- **Simular el turno.** El motor ([`mapa/reparto.js`](mapa/reparto.js)) planifica las rutas por barrido y simula el reparto: las furgonetas cargan en la estación, salen por oleadas, recorren sus zonas parada a parada por el callejero de cada código postal (sin salirse de él) y vuelven a la estación. La lluvia las frena, el agua corta tramos inundables (se ven en rojo) y deja barrios sin acceso, la huelga deja rutas sin conductor y un retraso de salida se come la jornada de 9 h del conductor. Al tocar una furgoneta el mapa se acerca y la sigue por sus calles.
+- **La flota.** Cuántas furgonetas cargan, están en la calle o han vuelto, con una gráfica del turno entero. Cuando vuelve cada una se sabe cómo le fue al conductor (sin problemas, sin tiempo para todo o frenado por el agua) y, al acabar, si **faltaron o sobraron furgonetas**: faltan las que harían falta para lo que volvió por falta de tiempo; sobran las que caben en el margen libre de las rutas.
+- **Enlazado con DS Flow.** El informe de fin de turno tiene un botón "Ver el reparto en Cádiz" que abre el mapa simulando el reparto de ese turno: los paquetes que salieron, el rollover y la hora a la que salió cada oleada. Si una oleada salió tarde del sort, sus furgonetas salen tarde en el mapa.
+- **Tour guiado** (botón "Tour guiado", o `mapa/?tour=1`): 9 pasos con un flash flood de ejemplo.
+
+![El turno simulado con Black Friday y temporal: las furgonetas por las calles de sus zonas](docs/mapa-cadiz-dia.jpg)
+
+Cómo se ha hecho y qué tal predice el modelo: [`mapa/data/MODELO.md`](mapa/data/MODELO.md) (error medio por zona de 1,7 puntos frente a la media de muchos turnos simulados) y [`mapa/data/RESUMEN.md`](mapa/data/RESUMEN.md) (base geográfica). Para regenerarlo:
+
+```bash
+python3 -m pip install shapely matplotlib scikit-learn pandas
+python3 mapa/tools/build_data.py                       # zonas, población y carreteras
+node mapa/tools/generar_simulaciones.js 12000 mapa/tools/.cache/simulaciones.csv
+node mapa/tools/generar_simulaciones.js 60 mapa/tools/.cache/montecarlo.csv 30
+python3 mapa/tools/entrenar_modelo.py                  # modelo.json y MODELO.md
+```
 
 ## Qué significa cada métrica
 
@@ -71,6 +96,8 @@ El archivo **se lee en el navegador y no se sube a ningún sitio**. El `.gitigno
 
 La estación es genérica. Muelles, pasillos, rutas, horarios, ritmos y volúmenes son cifras inventadas o redondeadas, y se ajustan en [`layout.js`](layout.js). Las personas de la plantilla, sus IDs y sus nombres también son inventados. No contiene datos internos de ninguna empresa.
 
+En el mapa de Cádiz, los códigos postales y la población (Censo 2021 del INE) son reales; la estación, los nombres de las rutas, la red de carreteras, el riesgo de inundación y los ritmos de reparto son ficticios o ilustrativos.
+
 ## Stack
 
 JavaScript sin dependencias y Canvas. Sin build: es una página estática.
@@ -92,7 +119,13 @@ JavaScript sin dependencias y Canvas. Sin build: es una página estática.
 | `charts.js` | Gráficas pequeñas (plan frente a real, ritmo por hora) |
 | `ui.js` | Centro de control, planificador, high values, controles y bucle de animación |
 | `whatif-worker.js` | Simula turnos en segundo plano: el resto del turno para el planificador y los turnos enteros de la comparación |
-| `test/` | Pruebas del motor (`npm test`) |
+| `mapa/index.html`, `mapa/ui.js`, `mapa/mapa.css` | Mapa de reparto en Cádiz: mapa de calor en Canvas, panel de condiciones y turno simulado con la flota |
+| `mapa/reparto.js` | Motor del reparto en la calle: planificación de rutas, oleadas, lluvia, cortes, huelga, sin DOM |
+| `mapa/modelo.js` | Evalúa en el navegador el modelo de IA exportado y calcula los valores de Shapley |
+| `mapa/tour-mapa.js` | Pasos del tour guiado del mapa (usa el motor de `tour.js`) |
+| `mapa/data/` | Base geográfica (`cadiz-base.json`), modelo (`modelo.json`) y sus informes |
+| `mapa/tools/` | Scripts que construyen la base, simulan los turnos de entrenamiento y entrenan el modelo |
+| `test/` | Pruebas de los motores y del modelo (`npm test`) |
 
 ## Ejecutar en local
 
@@ -107,7 +140,7 @@ python3 -m http.server 8000
 npm test   # node --test, sin dependencias
 ```
 
-Comprueban que no se pierde ningún paquete, que la misma semilla da la misma partida, que el turno se completa, que la previsión se acerca a la hora real, que la estimación del planificador se acerca a la simulación completa, que simular el resto del turno repite la partida exacta, el efecto de los marshalls, el descanso, las horas de apoyo de la noche, la carga de la tarde que se queda en la playa, la comparación de escenarios, los high value, las incidencias, los escenarios y la importación del CSV. Se ejecutan en cada PR con GitHub Actions.
+Comprueban que no se pierde ningún paquete, que la misma semilla da la misma partida, que el turno se completa, que la previsión se acerca a la hora real, que la estimación del planificador se acerca a la simulación completa, que simular el resto del turno repite la partida exacta, el efecto de los marshalls, el descanso, las horas de apoyo de la noche, la carga de la tarde que se queda en la playa, la comparación de escenarios, los high value, las incidencias, los escenarios y la importación del CSV. En el mapa de Cádiz, que el reparto no pierde paquetes, que las condiciones empeoran la entrega, que el navegador predice lo mismo que el modelo entrenado en Python que la IA se acerca a la media de muchos turnos simulados y que las métricas de la flota cuadran. Se ejecutan en cada PR con GitHub Actions.
 
 ## Despliegue
 

@@ -21,7 +21,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=DM+Mono:wght@400;500&family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;1,9..144,400&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="ds-flow.css?v=2026-10-16.4">
+  <link rel="stylesheet" href="ds-flow.css?v=2026-10-20.4">
 </head>
 <body>
   <header class="ds-top">
@@ -31,6 +31,7 @@
       <p>Un turno de una estación de reparto de última milla: camiones, sort, oleadas de salida y sus métricas en vivo.</p>
     </div>
     <div class="ds-actions">
+      <a class="ds-btn ds-btn--ghost ds-present-hide" href="mapa/" title="Lo que pasa después de la estación: el reparto por la provincia de Cádiz con lluvia, flash flood o huelga">Reparto en Cádiz</a>
       <button class="ds-btn" id="ds-present" aria-pressed="false" title="Tour guiado por la app: recorre un turno y explica cada parte (tecla P: pantalla completa)">▶ Presentar</button>
       <button class="ds-icon" id="ds-theme" aria-label="Cambiar tema">☀</button>
     </div>
@@ -191,6 +192,7 @@
   <dialog class="ds-report" id="ds-report" aria-label="Informe de fin de turno">
     <div id="ds-report-body"></div>
     <div class="ds-report-actions">
+      <a class="ds-btn ds-btn--out" id="ds-report-map" href="mapa/">Ver el reparto en Cádiz →</a>
       <button class="ds-btn" id="ds-report-compare">Comparar con otro escenario</button>
       <button class="ds-btn ds-btn--out" id="ds-report-csv">Descargar CSV</button>
       <button class="ds-btn" id="ds-report-print">Imprimir o guardar PDF</button>
@@ -222,17 +224,17 @@
   </dialog>
 
   <!-- ?v= obliga al navegador a descargar la versión nueva tras cada cambio (GitHub Pages guarda en caché 10 min): súbelo en cada versión -->
-  <script src="layout.js?v=2026-10-16.4"></script>
-  <script src="crew.js?v=2026-10-16.4"></script>
-  <script src="engine.js?v=2026-10-16.4"></script>
-  <script src="scenarios.js?v=2026-10-16.4"></script>
-  <script src="report.js?v=2026-10-16.4"></script>
-  <script src="compare.js?v=2026-10-16.4"></script>
-  <script src="importcsv.js?v=2026-10-16.4"></script>
-  <script src="charts.js?v=2026-10-16.4"></script>
-  <script src="render.js?v=2026-10-16.4"></script>
-  <script src="tour.js?v=2026-10-16.4"></script>
-  <script src="ui.js?v=2026-10-16.4"></script>
-  <script src="crewui.js?v=2026-10-16.4"></script>
+  <script src="layout.js?v=2026-10-20.4"></script>
+  <script src="crew.js?v=2026-10-20.4"></script>
+  <script src="engine.js?v=2026-10-20.4"></script>
+  <script src="scenarios.js?v=2026-10-20.4"></script>
+  <script src="report.js?v=2026-10-20.4"></script>
+  <script src="compare.js?v=2026-10-20.4"></script>
+  <script src="importcsv.js?v=2026-10-20.4"></script>
+  <script src="charts.js?v=2026-10-20.4"></script>
+  <script src="render.js?v=2026-10-20.4"></script>
+  <script src="tour.js?v=2026-10-20.4"></script>
+  <script src="ui.js?v=2026-10-20.4"></script>
+  <script src="crewui.js?v=2026-10-20.4"></script>
 </body>
 </html>

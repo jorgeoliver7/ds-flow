@@ -1,0 +1,38 @@
+ine;municipio;comarca;rutas;poblacion_2021;lat;lon;riesgo_inundacion;lluvia_relativa
+11001;Alcalá de los Gazules;La Janda;DQX1;5255;36.462;-5.723;2;1.5
+11002;Alcalá del Valle;Sierra de Cádiz;EQX1;5043;36.904;-5.173;1;1.3
+11003;Algar;Sierra de Cádiz;EQX1;1448;36.656;-5.656;1;1.4
+11005;Algodonales;Sierra de Cádiz;EQX1;5511;36.879;-5.405;1;1.5
+11006;Arcos de la Frontera;Sierra de Cádiz;EQX1;30931;36.750;-5.806;2;1.2
+11007;Barbate;La Janda;DQX1;22701;36.192;-5.922;3;1.1
+11901;Benalup-Casas Viejas;La Janda;DQX1;7161;36.344;-5.813;3;1.3
+11009;Benaocaz;Sierra de Cádiz;EQX1;688;36.701;-5.422;1;2.5
+11010;Bornos;Sierra de Cádiz;EQX1;7658;36.817;-5.743;2;1.2
+11015;Chiclana de la Frontera;Bahía de Cádiz;DQX1;86450;36.419;-6.149;3;1.0
+11016;Chipiona;Costa Noroeste;DQX1;19386;36.737;-6.437;1;0.9
+11014;Conil de la Frontera;La Janda;DQX1;23186;36.277;-6.088;2;1.0
+11012;Cádiz;Bahía de Cádiz;DQX1;114442;36.527;-6.288;1;1.0
+11011;El Bosque;Sierra de Cádiz;EQX1;2225;36.758;-5.505;2;2.0
+11018;El Gastor;Sierra de Cádiz;EQX1;1720;36.856;-5.323;1;1.6
+11027;El Puerto de Santa María;Bahía de Cádiz;DQX1;89062;36.594;-6.233;2;1.0
+11017;Espera;Sierra de Cádiz;EQX1;3844;36.871;-5.808;1;1.1
+11019;Grazalema;Sierra de Cádiz;EQX1;2031;36.759;-5.368;2;3.5
+11020;Jerez de la Frontera;Campiña de Jerez;DQX1;213616;36.686;-6.137;2;1.0
+11023;Medina Sidonia;La Janda;DQX1;11866;36.457;-5.927;2;1.2
+11024;Olvera;Sierra de Cádiz;EQX1;8013;36.935;-5.268;1;1.3
+11025;Paterna de Rivera;La Janda;DQX1;5476;36.522;-5.866;1;1.1
+11026;Prado del Rey;Sierra de Cádiz;EQX1;5689;36.787;-5.556;1;1.6
+11028;Puerto Real;Bahía de Cádiz;DQX1;41793;36.528;-6.190;1;1.0
+11029;Puerto Serrano;Sierra de Cádiz;EQX1;6945;36.922;-5.545;2;1.2
+11030;Rota;Costa Noroeste;DQX1;29446;36.617;-6.357;1;0.9
+11031;San Fernando;Bahía de Cádiz;DQX1;94952;36.465;-6.198;1;1.0
+11902;San José del Valle;Campiña de Jerez;DQX1;4435;36.606;-5.797;2;1.2
+11032;Sanlúcar de Barrameda;Costa Noroeste;DQX1;69590;36.778;-6.351;1;0.9
+11034;Setenil de las Bodegas;Sierra de Cádiz;EQX1;2702;36.863;-5.181;2;1.3
+11036;Torre Alháquime;Sierra de Cádiz;EQX1;800;36.917;-5.234;1;1.3
+11037;Trebujena;Costa Noroeste;DQX1;7044;36.871;-6.176;2;0.9
+11038;Ubrique;Sierra de Cádiz;EQX1;16493;36.677;-5.447;3;2.0
+11039;Vejer de la Frontera;La Janda;DQX1;12622;36.252;-5.966;2;1.2
+11040;Villaluenga del Rosario;Sierra de Cádiz;EQX1;470;36.697;-5.385;1;2.8
+11041;Villamartín;Sierra de Cádiz;EQX1;12213;36.860;-5.645;2;1.2
+11042;Zahara;Sierra de Cádiz;EQX1;1395;36.840;-5.391;1;2.0

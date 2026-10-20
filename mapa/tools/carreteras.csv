@@ -1,0 +1,61 @@
+desde;hasta;via;tipo;inundable;nota
+Estación;Jerez de la Frontera;A-4;autovia;0;
+Estación;El Puerto de Santa María;A-4;autovia;1;cruce del Guadalete
+Estación;Puerto Real;AP-4;autovia;0;
+Cádiz;San Fernando;CA-33;autovia;1;temporales en el istmo
+Cádiz;Puerto Real;Puente de la Constitución;autovia;0;
+San Fernando;Puerto Real;A-4;autovia;0;
+Puerto Real;El Puerto de Santa María;A-4;autovia;1;marismas
+El Puerto de Santa María;Jerez de la Frontera;A-4;autovia;1;cruce del Guadalete
+San Fernando;Chiclana de la Frontera;A-48;autovia;1;río Iro
+Chiclana de la Frontera;Conil de la Frontera;A-48;autovia;0;
+Conil de la Frontera;Vejer de la Frontera;A-48;autovia;0;
+Vejer de la Frontera;Barbate;A-314;comarcal;1;marismas del Barbate
+Barbate;Conil de la Frontera;A-2233;comarcal;0;por Caños de Meca
+Alcalá de los Gazules;Medina Sidonia;A-381;autovia;0;
+Medina Sidonia;Jerez de la Frontera;A-381;autovia;1;cruce del Guadalete
+Medina Sidonia;Chiclana de la Frontera;A-390;comarcal;0;
+Medina Sidonia;Paterna de Rivera;comarcal;comarcal;0;
+Paterna de Rivera;Puerto Real;comarcal;comarcal;0;
+Medina Sidonia;Benalup-Casas Viejas;comarcal;comarcal;1;La Janda
+Benalup-Casas Viejas;Vejer de la Frontera;comarcal;comarcal;1;La Janda
+Benalup-Casas Viejas;Alcalá de los Gazules;comarcal;comarcal;0;
+Alcalá de los Gazules;Ubrique;A-375;sierra;1;puerto de Galis
+Jerez de la Frontera;Sanlúcar de Barrameda;A-480;comarcal;0;
+Sanlúcar de Barrameda;Chipiona;A-480;comarcal;0;
+Chipiona;Rota;A-491;comarcal;0;
+Rota;El Puerto de Santa María;A-491;comarcal;0;
+Sanlúcar de Barrameda;El Puerto de Santa María;costa;comarcal;0;
+Sanlúcar de Barrameda;Trebujena;comarcal;comarcal;1;marismas del Guadalquivir
+Trebujena;Jerez de la Frontera;comarcal;comarcal;0;
+Jerez de la Frontera;San José del Valle;comarcal;comarcal;1;río Majaceite
+San José del Valle;Algar;comarcal;comarcal;0;
+San José del Valle;Paterna de Rivera;comarcal;comarcal;0;
+Jerez de la Frontera;Arcos de la Frontera;A-382;autovia;1;cruce del Guadalete
+Arcos de la Frontera;Algar;comarcal;comarcal;0;
+Arcos de la Frontera;Bornos;A-384;nacional;1;río Guadalete
+Arcos de la Frontera;Espera;comarcal;comarcal;0;
+Bornos;Villamartín;A-384;nacional;1;río Guadalete
+Bornos;Espera;comarcal;comarcal;0;
+Villamartín;Puerto Serrano;comarcal;comarcal;1;río Guadalete
+Villamartín;Algodonales;A-384;nacional;0;
+Algodonales;Olvera;A-384;nacional;0;
+Olvera;Torre Alháquime;sierra;sierra;0;
+Torre Alháquime;Setenil de las Bodegas;sierra;sierra;1;río Trejo
+Setenil de las Bodegas;Alcalá del Valle;sierra;sierra;0;
+Olvera;Alcalá del Valle;sierra;sierra;0;
+Algodonales;Zahara;sierra;sierra;0;
+Algodonales;El Gastor;sierra;sierra;0;
+Zahara;Grazalema;CA-9104;sierra;1;puerto de las Palomas
+Villamartín;Prado del Rey;A-373;comarcal;0;
+Prado del Rey;El Bosque;A-373;comarcal;0;
+El Bosque;Ubrique;A-373;comarcal;1;crecidas del río Ubrique
+El Bosque;Grazalema;A-372;sierra;1;puerto del Boyar
+Arcos de la Frontera;El Bosque;A-372;comarcal;0;
+Ubrique;Benaocaz;A-374;sierra;0;
+Benaocaz;Villaluenga del Rosario;A-374;sierra;0;
+Villaluenga del Rosario;Grazalema;A-374;sierra;1;desprendimientos
+Ronda (Málaga);Setenil de las Bodegas;comarcal;comarcal;0;
+Ronda (Málaga);Grazalema;A-372;sierra;0;
+Ronda (Málaga);Villaluenga del Rosario;A-374;sierra;0;
+Ronda (Málaga);Olvera;A-367;comarcal;0;
