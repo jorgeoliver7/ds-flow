@@ -7,8 +7,8 @@
 
   // Cada paso: target (selector de lo que se ilumina), title, body (texto o función que lo calcula con el turno
   // en marcha), at (hora del turno a la que se adelanta antes de mostrarlo), before (prepara la pantalla) y
-  // action (botón opcional que hace algo por quien mira). El último paso lleva final: true, o una lista
-  // de botones [{ label, run, out }] para terminar.
+  // action (botón opcional que hace algo por quien mira). El último paso lleva final: la lista de botones
+  // [{ label, run, out }] para terminar.
   const DS_STEPS = [
     {
       target: ".ds-map-wrap", at: "01:40",
@@ -87,9 +87,18 @@
     {
       target: "#ds-report-btn", spotPad: 8,
       before: (a) => a.view("station"),
-      title: "Ya lo tienes",
-      body: "Al acabar el turno se abre un informe con lo que salió bien y lo que hay que mejorar, la productividad y el coste, y se puede comparar con otro escenario. Desde el informe, \"Ver el reparto en Cádiz\" lleva lo que salió de la estación al mapa de la provincia: las furgonetas salen a la hora en que las despachó cada oleada y se ve cómo les va en la calle. Puedes seguir el turno en pantalla completa o ir directamente al informe.",
-      final: true,
+      title: "El informe del turno",
+      body: "Al acabar el turno se abre un informe con lo que salió bien y lo que hay que mejorar, la productividad y el coste, y se puede comparar con otro escenario.",
+    },
+    {
+      target: "#ds-mapa-link", spotPad: 8,
+      title: "Y después, el reparto",
+      body: "También puedes ver una simulación de cómo sería el reparto en furgoneta de estas rutas en el mapa de calor de Cádiz: las furgonetas salen a la hora en que las despachó cada oleada, recorren sus zonas por las calles y vuelven, con lluvia, flash flood o huelga si quieres, y una IA que predice la entrega zona a zona. Desde el informe, \"Ver el reparto en Cádiz\" lo abre con lo que salió de la estación.",
+      final: [
+        { label: "Pantalla completa", run: (a) => a.present(true) },
+        { label: "Ver el informe", run: (a) => a.finish() },
+        { label: "Ver el reparto →", out: true, run: (a) => a.mapa() },
+      ],
     },
   ];
 
@@ -111,8 +120,6 @@
         else if (k === "close") stop();
         else if (k === "action") { const r = STEPS[i].action.run(api); if (r) done[i] = r; setTimeout(() => render(), 350); }
         else if (k.startsWith("final-")) { const f = STEPS[i].final[+k.slice(6)]; stop(); f.run(api); }
-        else if (k === "present") { stop(); api.present(true); }
-        else if (k === "report") { stop(); api.finish(); }
       });
       document.addEventListener("keydown", onKey, true);
       window.addEventListener("resize", place);
@@ -176,18 +183,15 @@
         <h3>${esc(st.title)}</h3>
         <p>${esc(body)}</p>
         ${st.action && !done[i] ? `<button class="ds-btn ds-btn--out ds-tour-act" data-tour="action">${esc(st.action.label)}</button>` : ""}
+        ${st.final ? `<div class="ds-tour-final">${st.final.map((f, k) => `<button class="ds-btn${f.out ? " ds-btn--out" : ""}" data-tour="final-${k}">${esc(f.label)}</button>`).join("")}</div>` : ""}
         <div class="ds-tour-nav">
           <button class="ds-btn ds-btn--ghost" data-tour="close">Salir</button>
           <span class="ds-tour-dots" aria-hidden="true">${STEPS.map((_, k) => `<i class="${k === i ? "is-on" : ""}"></i>`).join("")}</span>
           ${i > 0 ? `<button class="ds-btn ds-btn--ghost" data-tour="prev" aria-label="Paso anterior">←</button>` : ""}
-          ${Array.isArray(st.final)
-            ? st.final.map((f, k) => `<button class="ds-btn${f.out ? " ds-btn--out" : ""}" data-tour="final-${k}">${esc(f.label)}</button>`).join("")
-            : st.final
-            ? `<button class="ds-btn" data-tour="present">Pantalla completa</button><button class="ds-btn ds-btn--out" data-tour="report">Ver el informe</button>`
-            : `<button class="ds-btn ds-btn--out" data-tour="next">Siguiente →</button>`}
+          ${st.final ? "" : `<button class="ds-btn ds-btn--out" data-tour="next">Siguiente →</button>`}
         </div>`;
       place();
-      card.querySelector(Array.isArray(st.final) ? ".ds-btn--out[data-tour^=final]" : st.final ? '[data-tour="report"]' : '[data-tour="next"]')?.focus({ preventScroll: true });
+      card.querySelector(st.final ? ".ds-btn--out[data-tour^=final]" : '[data-tour="next"]')?.focus({ preventScroll: true });
     }
 
     // Coloca el foco de luz sobre lo que se explica y la tarjeta al lado (debajo, encima o, si no cabe, abajo del todo)
